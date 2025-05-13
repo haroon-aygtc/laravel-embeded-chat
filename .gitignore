@@ -1,0 +1,53 @@
+# IDE and Editor folders
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.cursor/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency directories (respect the more specific rules in subdirectories)
+node_modules/
+vendor/
+
+# Cache and build directories
+.cache/
+.temp/
+.tmp/
+dist/
+build/
+.next/
+out/
+.nuxt/
+.output/
+.vercel/
+
+# Local files
+*.local
+*.bak
+*~
+
+# Debug
+.debug/
+debug.log
+
+# Testing
+/coverage/
+.nyc_output/ 
