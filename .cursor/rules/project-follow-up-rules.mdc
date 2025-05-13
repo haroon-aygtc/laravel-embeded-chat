@@ -1,0 +1,100 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Backend API Development Rules:
+Directory Structure:
+
+Always Use the @laravel-api directory (assuming it is located within your Laravel project) for API-related work.
+
+Always complete the task do not stop do not ask until task cmplete
+
+Always review the Frontend and mae backend API in controller
+
+Always Follow modular development for each feature (e.g., user authentication, roles, permissions, etc.). Each module should be a self-contained unit with its controller, service, validation, and migration files.
+
+the current priority is to make the system functionally complete by building production-ready Laravel APIs. We are using a modular, clean architecture under the @laravel-api directory, aligning with frontend service structure at @frontend/src/services/api/features.
+
+Each module should be developed step by step based on actual frontend requirements. For every module: first create the backend API, then update or add new endpoints as needed, and finally connect them to the relevant frontend components.
+
+Most of the frontend implementation is already in place — it just needs the real, properly structured backend APIs to function end-to-end. Avoid mock, placeholder, or simulated logic. Focus on clean, maintainable, production-level code
+
+Controllers:
+
+Always Create controllers for each module, adhering to RESTful API standards.
+
+Always Avoid business logic in controllers; instead, move it to service classes to maintain separation of concerns.
+
+Always Keep controller methods concise and focused on HTTP request/response handling.
+
+Validation:
+
+Always use custom request classes for API validation. Define rules for each endpoint in the corresponding request class.
+
+Always Ensure that you handle edge cases for all validations, such as email uniqueness, password strength, etc.
+
+Always Validation should be centralized in the custom request classes, and no validation logic should be in the controller.
+
+Business Logic (Service Classes):
+
+Always Use service classes to contain the core business logic for each module. This keeps the controllers clean and focused on HTTP handling.
+
+Always Services should have well-defined methods and should be easily reusable across controllers.
+
+Models and Relationships:
+
+Always Define your Eloquent models based on your database tables.
+
+Always Use Eloquent relationships properly (e.g., hasMany, belongsToMany) and keep these relationships easily queryable.
+
+Always Avoid duplicate code for relationships by utilizing global scopes or custom Eloquent query methods to keep queries reusable and efficient.
+
+API Routes:
+
+Always Use routes/api.php for API-specific routes.
+
+Always Group routes by their module (e.g., auth, users, roles) to maintain organization.
+
+Always Ensure each route is properly secured, either via Sanctum (no JWT) or any other authentication method suited to your needs.
+
+Migrations:
+
+Always Define database migrations with proper column types, relationships (e.g., foreign keys), and constraints.
+
+Always Use seeds for mock data and factories for testing data generation.
+
+Always run migrations and verify database integrity after each change.
+
+Sanctum Authentication:
+
+Always Use Laravel Sanctum for API authentication and session management.
+
+Always Ensure that authentication is centralized and modular. For example, implement login and registration in a dedicated auth module.
+
+Frontend Integration (once API is ready):
+
+Always Ensure frontend API calls use a proper HTTP client (like Axios or Fetch).
+
+Always Send authentication tokens from Sanctum via the frontend's cookies (Sanctum uses cookies for maintaining authentication).
+
+Always Handle loading, error states, and edge cases in the frontend when calling the API (e.g., error responses like validation errors, 401 unauthorized).
+
+Avoid Duplicated Logic:
+
+Always No duplicate code between modules or within the same module. Keep methods DRY.
+
+Always refactor any redundant or repeated logic in your service classes or utility functions.
+
+Clear Flow Implementation:
+
+Always Work with clear flow: When a user clicks on a button, ensure the backend handles the request in a predictable manner.
+
+Always Ensure frontend requests are handled sequentially, meaning that every action has a clear and defined endpoint and response, which avoids confusion or redundant handling on both frontend and backend.
+
+
+
+
+
+
+Always Ensure that all modules have coverage for all API endpoints, especially edge cases like invalid inputs, unauthorized access, and validation error

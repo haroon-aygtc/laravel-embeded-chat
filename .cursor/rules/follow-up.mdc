@@ -1,0 +1,111 @@
+---
+description: This rules is helpful for Agent to keep focusing on full stack tech
+globs: 
+alwaysApply: false
+---
+You are an expert in TypeScript, Node.js, Next.js 14 App Router, React, GraphQL, Genql, Tailwind CSS, Radix UI, Shadcn UI, Laravel 12, and PHP.
+
+Key Principles
+
+* Always make changes fixing bug , fixing Errors, Improvement, changes direct to project code instead of giving in chat.
+* Always Write concise, technical responses with accurate TypeScript or PHP examples.
+* Always Use functional, declarative programming (JavaScript) and OOP (Laravel) aligned with SOLID principles.
+* Always Prefer iteration and modularization over duplication.
+* Always Use descriptive variable and method names.
+* Always Use lowercase with dashes for directories (e.g., components/chat-window, app/Http/Controllers).
+* Always Favor named exports for components and dependency injection in Laravel 12.
+* Always Use the Receive an Object, Return an Object (RORO) pattern.
+* Always Avoid repeated questions. The issue has been explained — take initiative to review and resolve it across the backend, frontend, or any related part of the system without unnecessary back-and-forth.
+* Always review the code before making changes. Understand the existing structure, logic, and objectives before implementing any updates. This helps avoid introducing issues or misaligned functionality.
+* Always Clean up the codebase as you work. Eliminate duplicate or redundant logic. Remove mock data, placeholders, and unnecessary temporary code. Always Avoid repeated patterns that serve no purpose. Keep the codebase lean, clear, and maintainable.
+* Always Focus on quality and clarity. Every change should reflect thoughtful implementation, not just surface-level adjustments.
+
+JavaScript/TypeScript
+
+* Always Use "function" keyword for pure functions. Omit semicolons.
+* Always Use TypeScript for all code. Prefer interfaces over types.
+* Always File structure: Exported component, subcomponents, helpers, static content, types.
+* Always Avoid unnecessary curly braces in conditional statements.
+* Always Use concise, one-line syntax for simple conditional statements (e.g., if (condition) doSomething()).
+* Always Use Zod for form validation.
+* Always Wrap client components in Suspense with fallback.
+* Always Use dynamic loading for non-critical components.
+* Always Optimize images (WebP, lazy loading, size).
+* Always Model expected errors as return values. Use error boundaries for unexpected ones.
+* Always Use useActionState and react-hook-form for validation.
+* Always Use next-safe-action for type-safe server actions.
+
+React/Next.js
+
+* Use functional components and TypeScript interfaces.
+* Use declarative JSX and Tailwind CSS.
+* Use Radix UI and Shadcn UI for UI components.
+* Use mobile-first responsive design.
+* Minimize 'use client', 'useEffect', and 'setState'. Prefer RSC.
+* Place static content and interfaces at the end.
+
+GraphQL/Genql
+
+* Always Use Genql client for type-safe API interaction.
+* Always Optimize queries to fetch only necessary data.
+* Always Use GraphQL fragments and batching when possible.
+
+Laravel/PHP
+
+* Always Use Laravel 11+ and PHP 8.1+ features (typed properties, match expressions).
+* Always Follow PSR-12 and declare(strict\_types=1).
+* Always Use Laravel built-ins: validation, Eloquent ORM, middleware, Form Requests.
+* Always Use database transactions where needed.
+* Always Follow MVC pattern and use Blade for views.
+* Always Prefer Repository pattern for data access.
+* Always Use Laravel Sanctum, Cors , CSRF protection, and localization.
+* Always Implement proper logging, monitoring, and custom exceptions.
+* Always Use Laravel's query builder for complex queries.
+* Always Use job queues for long-running tasks.
+* Always Use Laravel Mix or Vite for asset compilation if needed.
+* Always Implement pagination, caching, and API versioning.
+* Always Structure code using Laravel conventions (e.g., app/Models, app/Http/Controllers, routes/api.php).
+
+Testing & Deployment
+
+* Always Write unit tests (PHPUnit, Jest), integration tests, and e2e tests (Laravel Dusk).
+* Test S upabase/GraphQL data access locally.
+* Always Use Laravel’s task scheduling for recurring jobs.
+* Always Use Taskfile for development automation.
+
+Accessibility
+
+* Always Ensure keyboard navigability and ARIA attributes.
+* Always Meet WCAG contrast and structure guidelines.
+
+Documentation
+
+* Always Comment complex logic clearly. Use JSDoc/PHPDoc.
+* Always Keep README and schema documentation updated.
+* Always Document Laravel RLS, policies, and middleware when applicable.
+
+Conventions
+
+* Always Booleans: Use auxiliary verbs (isDisabled, hasError).
+* Always Filenames: Use lowercase with dashes (e.g., auth-wizard.tsx).
+* Always Extensions: .config.ts, .test.ts, .context.tsx, .type.ts, .hook.ts, .controller.php, etc.
+
+Component Structure
+
+* Always Keep components small with minimal props.
+* Always Use composition for building complex UIs.
+* Always Structure order: component > subcomponent > styled > static > types.
+
+State & Data
+
+* Always Prefer Server Components for fetching.
+* Always Use preload pattern to avoid waterfalls.
+* Always vercel KV for chat history/session when needed.
+* Always Laravel, leverage Eloquent relationships and caching.
+
+Security & Integrity
+
+* Always Use proper validation everywhere.
+* Always Sanitize all inputs before sending to models or AI.
+* Always Handle model unavailability and quota issues gracefully.
+* Always Use environment variables for sensitive credentials.
