@@ -1,7 +1,7 @@
 /**
  * AI Service
- * 
- * Provides methods for interacting with AI endpoints.
+ *
+ * Provides methods for interacting with AI endpoints with robust error handling and fallbacks.
  */
 
 import {
@@ -18,11 +18,33 @@ import {
   AIStreamChunk,
   PromptTemplate,
 } from "./api/features/aifeatures";
+import { aiProviderApi } from "./api/features/aiProvidersfeatures";
 import logger from "@/utils/logger";
 import followUpService from "@/services/followUpService";
 import { FollowUpQuestion, GenerateFollowUpsRequest } from "./api/features/followupfeatures";
 import { knowledgeBaseService } from './knowledgeBaseService';
 import type { KnowledgeEntry } from './api/features/knowledgebase/knowledgebasefeatures';
+
+// Maximum number of retries for API calls
+const MAX_RETRIES = 3;
+
+// Delay between retries in milliseconds (with exponential backoff)
+const BASE_RETRY_DELAY = 1000;
+
+// Error patterns that indicate a retryable error
+const RETRYABLE_ERROR_PATTERNS = [
+  'timeout',
+  'network error',
+  'connection',
+  'rate limit',
+  'too many requests',
+  'server error',
+  '5\\d\\d', // 5xx status codes
+  'capacity',
+  'overloaded',
+  'try again',
+  'temporary',
+];
 
 interface AIQueryOptions {
   contextRuleId?: string | null;
@@ -48,39 +70,183 @@ interface AIQueryResponse {
 }
 
 /**
- * Service to handle AI operations
+ * Service to handle AI operations with robust error handling and fallbacks
  */
 class AIService {
   /**
-   * Generate a response using AI models
+   * Check if an error is retryable based on its message
+   */
+  private isRetryableError(error: any): boolean {
+    if (!error) return false;
+
+    const errorMessage = error.message || error.toString();
+    const errorMessageLower = errorMessage.toLowerCase();
+
+    return RETRYABLE_ERROR_PATTERNS.some(pattern =>
+      new RegExp(pattern, 'i').test(errorMessageLower)
+    );
+  }
+
+  /**
+   * Sleep for a specified duration
+   */
+  private async sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Execute a function with retry logic
+   */
+  private async withRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = MAX_RETRIES,
+    baseDelay: number = BASE_RETRY_DELAY
+  ): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+
+        // If this is the last attempt or the error is not retryable, throw it
+        if (attempt === maxRetries || !this.isRetryableError(error)) {
+          throw error;
+        }
+
+        // Calculate delay with exponential backoff and jitter
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+
+        logger.info(`Retrying after error: ${error.message}`, {
+          attempt: attempt + 1,
+          maxRetries,
+          delay,
+        });
+
+        // Wait before the next attempt
+        await this.sleep(delay);
+      }
+    }
+
+    // This should never be reached due to the throw in the loop
+    throw lastError;
+  }
+
+  /**
+   * Get fallback models for a given model
+   */
+  private async getFallbackModels(primaryModelId: string): Promise<AIModel[]> {
+    try {
+      // Get all available models
+      const allModels = await this.getModels();
+      if (!allModels || allModels.length === 0) return [];
+
+      // Find the primary model
+      const primaryModel = allModels.find(model => model.id === primaryModelId);
+      if (!primaryModel) return allModels.filter(model => model.is_available);
+
+      // First, try models from the same provider
+      const sameProviderModels = allModels.filter(model =>
+        model.provider === primaryModel.provider &&
+        model.id !== primaryModelId &&
+        model.is_available
+      );
+
+      // Then, add models from other providers
+      const otherProviderModels = allModels.filter(model =>
+        model.provider !== primaryModel.provider &&
+        model.is_available
+      );
+
+      // Combine and sort by priority
+      return [...sameProviderModels, ...otherProviderModels].sort((a, b) =>
+        (b.priority || 0) - (a.priority || 0)
+      );
+    } catch (error) {
+      logger.error("Error getting fallback models:", error);
+      return [];
+    }
+  }
+  /**
+   * Generate a response using AI models with retry and fallback logic
    */
   generateResponse = async (options: GenerateRequest): Promise<GenerateResponse> => {
     try {
-      const response = await aiApi.generate(options);
+      // Try with the primary model first
+      return await this.withRetry(async () => {
+        const response = await aiApi.generate(options);
 
-      if (!response.success || !response.data) {
-        throw new Error(
-          response.error?.message || "Failed to generate AI response"
-        );
+        if (!response.success || !response.data) {
+          throw new Error(
+            response.error?.message || "Failed to generate AI response"
+          );
+        }
+
+        // Log the interaction
+        await this.logInteraction({
+          userId: options.userId,
+          query: options.query,
+          response: response.data.content,
+          modelUsed: response.data.modelUsed,
+          contextRuleId: options.contextRuleId,
+          knowledgeBaseResults: response.data.knowledgeBaseResults,
+          knowledgeBaseIds: response.data.knowledgeBaseIds,
+          metadata: response.data.metadata,
+        });
+
+        return response.data;
+      });
+    } catch (error) {
+      logger.error("Error generating AI response with primary model:", error);
+
+      // Try with fallback models if a preferred model was specified
+      if (options.preferredModel) {
+        try {
+          const fallbackModels = await this.getFallbackModels(options.preferredModel);
+
+          // Try each fallback model in order
+          for (const fallbackModel of fallbackModels) {
+            try {
+              logger.info(`Trying fallback model: ${fallbackModel.id}`);
+
+              const fallbackOptions = {
+                ...options,
+                preferredModel: fallbackModel.id,
+              };
+
+              const response = await this.withRetry(() => aiApi.generate(fallbackOptions));
+
+              if (response.success && response.data) {
+                // Log the interaction with fallback model
+                await this.logInteraction({
+                  userId: options.userId,
+                  query: options.query,
+                  response: response.data.content,
+                  modelUsed: response.data.modelUsed,
+                  contextRuleId: options.contextRuleId,
+                  knowledgeBaseResults: response.data.knowledgeBaseResults,
+                  knowledgeBaseIds: response.data.knowledgeBaseIds,
+                  metadata: {
+                    ...response.data.metadata,
+                    fallback: true,
+                    originalModel: options.preferredModel,
+                  },
+                });
+
+                return response.data;
+              }
+            } catch (fallbackError) {
+              logger.error(`Error with fallback model ${fallbackModel.id}:`, fallbackError);
+              // Continue to the next fallback model
+            }
+          }
+        } catch (fallbackError) {
+          logger.error("Error using fallback models:", fallbackError);
+        }
       }
 
-      // Log the interaction
-      await this.logInteraction({
-        userId: options.userId,
-        query: options.query,
-        response: response.data.content,
-        modelUsed: response.data.modelUsed,
-        contextRuleId: options.contextRuleId,
-        knowledgeBaseResults: response.data.knowledgeBaseResults,
-        knowledgeBaseIds: response.data.knowledgeBaseIds,
-        metadata: response.data.metadata,
-      });
-
-      return response.data;
-    } catch (error) {
-      logger.error("Error generating AI response:", error);
-
-      // Return a fallback response
+      // If all models failed or no fallbacks were available, return a generic response
       return {
         content: "I'm sorry, I encountered an error processing your request. Please try again later.",
         modelUsed: "fallback-model",
@@ -89,7 +255,7 @@ class AIService {
   };
 
   /**
-   * Generate a streaming response from AI models
+   * Generate a streaming response from AI models with retry and fallback logic
    */
   generateStreamingResponse = async (
     options: GenerateRequest,
@@ -97,45 +263,155 @@ class AIService {
       onChunk: (chunk: AIStreamChunk) => void;
       onComplete?: (data: any) => void;
       onError?: (error: any) => void;
+      onFallback?: (fallbackModel: string) => void;
     }
   ): Promise<void> => {
+    // Track the full response for logging
+    const responseChunks: string[] = [];
+
+    // Try with the primary model
     try {
-      const stream = await aiApi.generateStream(options);
-      const reader = stream.getReader();
-      const decoder = new TextDecoder("utf-8");
+      await this.withRetry(async () => {
+        const stream = await aiApi.generateStream(options);
+        const reader = stream.getReader();
+        const decoder = new TextDecoder("utf-8");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const chunk = decoder.decode(value);
+          const chunk = decoder.decode(value);
 
+          try {
+            const jsonChunk = JSON.parse(chunk);
+            callbacks.onChunk(jsonChunk);
+
+            // Collect the text for logging
+            if (jsonChunk.text) {
+              responseChunks.push(jsonChunk.text);
+            }
+          } catch (e) {
+            // Handle non-JSON chunks if needed
+            callbacks.onChunk({ text: chunk });
+            responseChunks.push(chunk);
+          }
+        }
+
+        if (callbacks.onComplete) {
+          callbacks.onComplete({});
+        }
+
+        // Log the interaction after completion
+        this.logInteraction({
+          userId: options.userId,
+          query: options.query,
+          response: responseChunks.join(''),
+          modelUsed: options.preferredModel || "unknown",
+          contextRuleId: options.contextRuleId,
+          metadata: { streaming: true },
+        });
+
+        return true;
+      });
+    } catch (error) {
+      logger.error("Error generating streaming AI response with primary model:", error);
+
+      // Try with fallback models if a preferred model was specified
+      if (options.preferredModel) {
         try {
-          const jsonChunk = JSON.parse(chunk);
-          callbacks.onChunk(jsonChunk);
-        } catch (e) {
-          // Handle non-JSON chunks if needed
-          callbacks.onChunk({ text: chunk });
+          const fallbackModels = await this.getFallbackModels(options.preferredModel);
+
+          // Try each fallback model in order
+          for (const fallbackModel of fallbackModels) {
+            try {
+              logger.info(`Trying fallback model for streaming: ${fallbackModel.id}`);
+
+              // Notify about fallback if callback is provided
+              if (callbacks.onFallback) {
+                callbacks.onFallback(fallbackModel.id);
+              }
+
+              const fallbackOptions = {
+                ...options,
+                preferredModel: fallbackModel.id,
+              };
+
+              // Clear previous response chunks
+              responseChunks.length = 0;
+
+              // Try with the fallback model
+              const fallbackStream = await this.withRetry(() => aiApi.generateStream(fallbackOptions));
+              const reader = fallbackStream.getReader();
+              const decoder = new TextDecoder("utf-8");
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+
+                try {
+                  const jsonChunk = JSON.parse(chunk);
+                  callbacks.onChunk(jsonChunk);
+
+                  // Collect the text for logging
+                  if (jsonChunk.text) {
+                    responseChunks.push(jsonChunk.text);
+                  }
+                } catch (e) {
+                  // Handle non-JSON chunks if needed
+                  callbacks.onChunk({ text: chunk });
+                  responseChunks.push(chunk);
+                }
+              }
+
+              if (callbacks.onComplete) {
+                callbacks.onComplete({
+                  fallback: true,
+                  originalModel: options.preferredModel,
+                  fallbackModel: fallbackModel.id,
+                });
+              }
+
+              // Log the interaction with fallback model
+              this.logInteraction({
+                userId: options.userId,
+                query: options.query,
+                response: responseChunks.join(''),
+                modelUsed: fallbackModel.id,
+                contextRuleId: options.contextRuleId,
+                metadata: {
+                  streaming: true,
+                  fallback: true,
+                  originalModel: options.preferredModel,
+                },
+              });
+
+              // Successfully used a fallback model
+              return;
+            } catch (fallbackError) {
+              logger.error(`Error with fallback streaming model ${fallbackModel.id}:`, fallbackError);
+              // Continue to the next fallback model
+            }
+          }
+        } catch (fallbackError) {
+          logger.error("Error using fallback models for streaming:", fallbackError);
         }
       }
 
-      if (callbacks.onComplete) {
-        callbacks.onComplete({});
-      }
-
-      // Log the interaction after completion
-      this.logInteraction({
-        userId: options.userId,
-        query: options.query,
-        response: "[STREAM RESPONSE]", // You might want to collect the full response during streaming
-        modelUsed: options.preferredModel || "unknown",
-        contextRuleId: options.contextRuleId,
-        metadata: { streaming: true },
-      });
-    } catch (error) {
-      logger.error("Error generating streaming AI response:", error);
+      // If all models failed, call the error callback
       if (callbacks.onError) {
         callbacks.onError(error);
+      }
+
+      // Send a fallback error message as a chunk
+      callbacks.onChunk({
+        text: "I'm sorry, I encountered an error processing your request. Please try again later.",
+        error: true,
+      });
+
+      if (callbacks.onComplete) {
+        callbacks.onComplete({ error: true });
       }
     }
   };
@@ -363,30 +639,28 @@ class AIService {
   };
 
   /**
-   * Send a query to the AI with optional follow-up integration
+   * Send a query to the AI with optional follow-up integration, using retry and fallback logic
    */
   sendQuery = async (query: string, options: AIQueryOptions = {}): Promise<AIQueryResponse> => {
     try {
-      // Use the existing generate endpoint
+      // Use the existing generate endpoint with retry logic
       const request: GenerateRequest = {
         query: query,
         contextRuleId: options.contextRuleId || undefined,
         userId: "current", // This will be determined by the backend
+        preferredModel: options.metadata?.preferredModel,
         additionalParams: options.metadata
       };
 
-      const response = await aiApi.generate(request);
-
-      if (!response.success) {
-        throw new Error(response.error?.message || "Failed to get response from AI");
-      }
+      // Use the generateResponse method which already has retry and fallback logic
+      const response = await this.generateResponse(request);
 
       const aiResponse: AIQueryResponse = {
         query: query,
-        ai_response: response.data.content,
-        model_used: response.data.modelUsed,
+        ai_response: response.content,
+        model_used: response.modelUsed,
         processing_time: 0, // Not available in the current API
-        token_usage: undefined // Not available in the current API
+        token_usage: response.tokenUsage
       };
 
       // Generate follow-up questions if a config was specified
@@ -399,22 +673,32 @@ class AIService {
             config_id: options.followUpConfigId,
           };
 
-          const followUpQuestions = await followUpService.generateFollowUps(followUpRequest);
+          // Use retry logic for follow-up generation
+          const followUpQuestions = await this.withRetry(() =>
+            followUpService.generateFollowUps(followUpRequest)
+          );
 
           if (followUpQuestions.length > 0) {
             aiResponse.follow_up_questions = followUpQuestions;
             aiResponse.follow_up_config = options.followUpConfigId;
           }
         } catch (error) {
-          console.error("Error generating follow-up questions:", error);
+          logger.error("Error generating follow-up questions:", error);
           // Continue without follow-up questions if there's an error
         }
       }
 
       return aiResponse;
     } catch (error) {
-      console.error("Error in AI query:", error);
-      throw error;
+      logger.error("Error in AI query:", error);
+
+      // Return a fallback response
+      return {
+        query: query,
+        ai_response: "I'm sorry, I encountered an error processing your request. Please try again later.",
+        model_used: "fallback-model",
+        processing_time: 0,
+      };
     }
   };
 
@@ -449,53 +733,59 @@ class AIService {
   };
 
   /**
-   * Send a query to the AI with knowledge base context
+   * Send a query to the AI with knowledge base context, using retry and fallback logic
    */
   sendQueryWithKnowledge = async (
     query: string,
     options: AIQueryOptions = {}
   ): Promise<AIQueryResponse> => {
     try {
+      // First, fetch knowledge base entries with retry logic
+      let knowledgeEntries: KnowledgeEntry[] = [];
+
+      if (options.useKnowledgeBase && options.knowledgeBaseIds && options.knowledgeBaseIds.length > 0) {
+        try {
+          knowledgeEntries = await this.withRetry(() =>
+            this.searchKnowledgeBaseForQuery(query, options.knowledgeBaseIds)
+          );
+
+          logger.info(`Found ${knowledgeEntries.length} knowledge base entries for query`);
+        } catch (kbError) {
+          logger.error("Error searching knowledge base:", kbError);
+          // Continue without knowledge base results if there's an error
+        }
+      }
+
       // Use the existing generate endpoint with knowledge base parameters
       const request: GenerateRequest = {
         query: query,
         contextRuleId: options.contextRuleId || undefined,
         userId: "current", // This will be determined by the backend
         knowledgeBaseIds: options.knowledgeBaseIds,
+        preferredModel: options.metadata?.preferredModel,
         additionalParams: {
           ...options.metadata,
           useKnowledgeBase: true // This will be extracted on the backend
         }
       };
 
-      const response = await aiApi.generate(request);
-
-      if (!response.success) {
-        throw new Error(response.error?.message || "Failed to get response from AI");
-      }
+      // Use the generateResponse method which already has retry and fallback logic
+      const response = await this.generateResponse(request);
 
       const aiResponse: AIQueryResponse = {
         query: query,
-        ai_response: response.data.content,
-        model_used: response.data.modelUsed,
+        ai_response: response.content,
+        model_used: response.modelUsed,
         processing_time: 0, // Not available in the current API
-        token_usage: undefined // Not available in the current API
+        token_usage: response.tokenUsage
       };
 
-      // Get knowledge base results if available
-      if (response.data.knowledgeBaseResults) {
-        // The backend will need to be updated to return the actual entries
-        // For now, we'll just search manually if needed
-        if (options.knowledgeBaseIds && options.knowledgeBaseIds.length > 0) {
-          try {
-            const knowledgeEntries = await this.searchKnowledgeBaseForQuery(query, options.knowledgeBaseIds);
-            if (knowledgeEntries.length > 0) {
-              aiResponse.knowledge_base_results = knowledgeEntries;
-            }
-          } catch (error) {
-            console.error("Error fetching knowledge base entries:", error);
-          }
-        }
+      // Add knowledge base results if available
+      if (knowledgeEntries.length > 0) {
+        aiResponse.knowledge_base_results = knowledgeEntries;
+      } else if (response.knowledgeBaseResults) {
+        // If the backend returned knowledge base results, use those
+        aiResponse.knowledge_base_results = response.knowledgeBaseResults;
       }
 
       // Generate follow-up questions if a config was specified
@@ -504,39 +794,52 @@ class AIService {
           const followUpRequest: GenerateFollowUpsRequest = {
             user_query: query,
             ai_response: aiResponse.ai_response,
-            context: options.metadata,
+            context: {
+              ...options.metadata,
+              knowledgeBaseResults: knowledgeEntries.length > 0 ? knowledgeEntries : undefined
+            },
             config_id: options.followUpConfigId,
           };
 
-          const followUpQuestions = await followUpService.generateFollowUps(followUpRequest);
+          // Use retry logic for follow-up generation
+          const followUpQuestions = await this.withRetry(() =>
+            followUpService.generateFollowUps(followUpRequest)
+          );
 
           if (followUpQuestions.length > 0) {
             aiResponse.follow_up_questions = followUpQuestions;
             aiResponse.follow_up_config = options.followUpConfigId;
           }
         } catch (error) {
-          console.error("Error generating follow-up questions:", error);
+          logger.error("Error generating follow-up questions:", error);
           // Continue without follow-up questions if there's an error
         }
       }
 
       return aiResponse;
     } catch (error) {
-      console.error("Error in AI query with knowledge base:", error);
-      throw error;
+      logger.error("Error in AI query with knowledge base:", error);
+
+      // Return a fallback response
+      return {
+        query: query,
+        ai_response: "I'm sorry, I encountered an error processing your request. Please try again later.",
+        model_used: "fallback-model",
+        processing_time: 0,
+      };
     }
   };
 
   /**
-   * Search knowledge bases for relevant content
+   * Search knowledge bases for relevant content with retry logic
    */
   searchKnowledgeBaseForQuery = async (
     query: string,
     knowledgeBaseIds?: string[]
   ): Promise<KnowledgeEntry[]> => {
     try {
-      // Use the knowledge base service search
-      const results = await knowledgeBaseService.search(query);
+      // Use the knowledge base service search with retry logic
+      const results = await this.withRetry(() => knowledgeBaseService.search(query));
 
       // Filter by specific knowledge bases if provided
       if (knowledgeBaseIds && knowledgeBaseIds.length > 0) {
@@ -547,7 +850,7 @@ class AIService {
 
       return results;
     } catch (error) {
-      console.error("Error searching knowledge bases:", error);
+      logger.error("Error searching knowledge bases:", error);
       return [];
     }
   };

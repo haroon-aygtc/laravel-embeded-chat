@@ -498,17 +498,31 @@ class KnowledgeBaseService
             $entries = $knowledgeBase->entries()->where('is_active', true)->get();
 
             $processedCount = 0;
+            $failedCount = 0;
 
             // Process each entry
             foreach ($entries as $entry) {
-                // In a real application, this would likely be queued
-                $entry->generateEmbeddings();
-                $processedCount++;
+                // Queue the embedding generation for better performance in production
+                try {
+                    $success = $entry->generateEmbeddings();
+                    if ($success) {
+                        $processedCount++;
+                    } else {
+                        $failedCount++;
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Failed to generate embeddings for entry', [
+                        'entry_id' => $entry->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $failedCount++;
+                }
             }
 
             return response()->json([
                 'message' => 'Embeddings generation completed',
-                'processed_entries' => $processedCount
+                'processed_entries' => $processedCount,
+                'failed_entries' => $failedCount
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to generate embeddings', [
@@ -597,7 +611,8 @@ class KnowledgeBaseService
         User $user,
         string $entryId,
         int $limit = 5,
-        ?float $minSimilarityScore = null
+        ?float $minSimilarityScore = null,
+        bool $useVectors = true
     ): JsonResponse {
         try {
             $entry = KnowledgeEntry::where('id', $entryId)
@@ -613,8 +628,16 @@ class KnowledgeBaseService
                 return response()->json(['message' => 'Knowledge entry not found'], 404);
             }
 
-            // In a real implementation with vector embeddings, we would use vector similarity search here
-            // For now, let's use tag and content-based similarity with a mock score
+            // Use vector similarity search if available and requested
+            if ($useVectors && !empty($entry->vector_embedding)) {
+                $results = $this->findSimilarByVectors($entry, $limit, $minSimilarityScore);
+                
+                if (count($results) > 0) {
+                    return response()->json($results);
+                }
+            }
+            
+            // Fall back to content and tag-based similarity if vectors not available or no results
             $matchQuery = KnowledgeEntry::where('id', '!=', $entryId)
                 ->where('knowledge_base_id', $entry->knowledge_base_id)
                 ->where('is_active', true);
@@ -666,19 +689,78 @@ class KnowledgeBaseService
             $scoredEntries = array_slice($scoredEntries, 0, $limit);
 
             // Extract just the entries for response
-            $result = array_map(function($item) {
-                $entry = $item['entry'];
-                $entry->similarity_score = $item['similarity_score'];
-                return $entry;
-            }, $scoredEntries);
-
-            return response()->json($result);
+            return response()->json($scoredEntries);
         } catch (\Exception $e) {
             Log::error('Failed to find similar entries', [
                 'error' => $e->getMessage(),
                 'entry_id' => $entryId,
             ]);
             return response()->json(['message' => 'Failed to find similar entries: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Find similar entries using vector embeddings
+     */
+    private function findSimilarByVectors(
+        KnowledgeEntry $sourceEntry, 
+        int $limit = 5, 
+        ?float $minSimilarityScore = null
+    ): array {
+        try {
+            // Get entries with embeddings from the same knowledge base
+            $entries = KnowledgeEntry::where('id', '!=', $sourceEntry->id)
+                ->where('knowledge_base_id', $sourceEntry->knowledge_base_id)
+                ->where('is_active', true)
+                ->whereNotNull('vector_embedding')
+                ->get();
+            
+            $scoredEntries = [];
+            
+            foreach ($entries as $entry) {
+                if (empty($entry->vector_embedding)) {
+                    continue;
+                }
+                
+                // Calculate cosine similarity between vectors
+                $similarity = $entry->calculateCosineSimilarity($sourceEntry->vector_embedding);
+                
+                // Apply threshold if provided
+                if ($minSimilarityScore !== null && $similarity < $minSimilarityScore) {
+                    continue;
+                }
+                
+                // Set score and add to results
+                $entry->similarity_score = $similarity;
+                
+                $scoredEntries[] = [
+                    'id' => $entry->id,
+                    'title' => $entry->title,
+                    'content' => $entry->content,
+                    'summary' => $entry->summary,
+                    'source_url' => $entry->source_url,
+                    'source_type' => $entry->source_type,
+                    'similarity_score' => $similarity,
+                    'knowledge_base' => [
+                        'id' => $entry->knowledgeBase->id,
+                        'name' => $entry->knowledgeBase->name,
+                    ],
+                ];
+            }
+            
+            // Sort by similarity
+            usort($scoredEntries, function($a, $b) {
+                return $b['similarity_score'] <=> $a['similarity_score'];
+            });
+            
+            // Limit results
+            return array_slice($scoredEntries, 0, $limit);
+        } catch (\Exception $e) {
+            Log::error('Vector similarity search failed', [
+                'error' => $e->getMessage(),
+                'entry_id' => $sourceEntry->id,
+            ]);
+            return [];
         }
     }
 
@@ -771,5 +853,583 @@ class KnowledgeBaseService
         }
 
         return $result;
+    }
+
+    /**
+     * Search knowledge bases for AI context specifically
+     * Optimized for providing context to AI models based on user queries
+     */
+    public function searchForAIContext(
+        User $user,
+        string $query,
+        array $knowledgeBaseIds,
+        int $maxResults = 3,
+        float $minScore = 0.75
+    ): array {
+        try {
+            // First try vector search for semantic understanding
+            $results = [];
+            if (strlen($query) > 5) {
+                // Ensure knowledge bases exist and are accessible to the user
+                $baseQuery = KnowledgeBase::whereIn('id', $knowledgeBaseIds)
+                    ->where(function ($q) use ($user) {
+                        $q->where('user_id', $user->id)
+                          ->orWhere('is_public', true);
+                    })
+                    ->where('is_active', true);
+
+                $accessibleBaseIds = $baseQuery->pluck('id')->toArray();
+                
+                if (!empty($accessibleBaseIds)) {
+                    // Try vector search first for semantic matching
+                    $aiService = app(App\Services\AI\AIService::class);
+                    $embedding = $aiService->generateEmbeddingForQuery($query);
+                    
+                    if (!empty($embedding)) {
+                        $entries = KnowledgeEntry::whereIn('knowledge_base_id', $accessibleBaseIds)
+                            ->where('is_active', true)
+                            ->whereNotNull('vector_embedding')
+                            ->with('knowledgeBase:id,name,source_type')
+                            ->get();
+                            
+                        // Calculate similarity scores
+                        $scoredEntries = [];
+                        foreach ($entries as $entry) {
+                            if (empty($entry->vector_embedding)) {
+                                continue;
+                            }
+                            
+                            $similarity = $aiService->calculateSimilarity($embedding, $entry->vector_embedding);
+                            
+                            if ($similarity > $minScore) {
+                                $entry->similarity_score = $similarity;
+                                $scoredEntries[] = $entry;
+                            }
+                        }
+                        
+                        // Sort by similarity score
+                        usort($scoredEntries, function($a, $b) {
+                            return $b->similarity_score <=> $a->similarity_score;
+                        });
+                        
+                        // Take top results
+                        $scoredEntries = array_slice($scoredEntries, 0, $maxResults);
+                        
+                        // Format for AI context
+                        foreach ($scoredEntries as $entry) {
+                            $results[] = [
+                                'id' => $entry->id,
+                                'title' => $entry->title,
+                                'content' => $entry->formatted_content ?? $entry->content,
+                                'source_url' => $entry->source_url,
+                                'source_type' => $entry->source_type,
+                                'similarity_score' => $entry->similarity_score,
+                                'knowledge_base' => [
+                                    'id' => $entry->knowledgeBase->id,
+                                    'name' => $entry->knowledgeBase->name,
+                                    'source_type' => $entry->knowledgeBase->source_type,
+                                ],
+                            ];
+                        }
+                    }
+                    
+                    // If vector search yielded insufficient results, supplement with keyword search
+                    if (count($results) < $maxResults) {
+                        $neededCount = $maxResults - count($results);
+                        $existingIds = array_map(function($result) {
+                            return $result['id'];
+                        }, $results);
+                        
+                        // Basic text search
+                        $keywordEntries = KnowledgeEntry::whereIn('knowledge_base_id', $accessibleBaseIds)
+                            ->whereNotIn('id', $existingIds)
+                            ->where('is_active', true)
+                            ->where(function($q) use ($query) {
+                                $q->where('title', 'like', "%{$query}%")
+                                  ->orWhere('content', 'like', "%{$query}%");
+                            })
+                            ->with('knowledgeBase:id,name,source_type')
+                            ->limit($neededCount)
+                            ->get();
+                            
+                        foreach ($keywordEntries as $entry) {
+                            $results[] = [
+                                'id' => $entry->id,
+                                'title' => $entry->title,
+                                'content' => $entry->formatted_content ?? $entry->content,
+                                'source_url' => $entry->source_url,
+                                'source_type' => $entry->source_type,
+                                'similarity_score' => 0.7, // Default score for keyword matches
+                                'knowledge_base' => [
+                                    'id' => $entry->knowledgeBase->id,
+                                    'name' => $entry->knowledgeBase->name,
+                                    'source_type' => $entry->knowledgeBase->source_type,
+                                ],
+                            ];
+                        }
+                    }
+                }
+            }
+            
+            return $results;
+        } catch (\Exception $e) {
+            Log::error('Error searching knowledge bases for AI context', [
+                'error' => $e->getMessage(),
+                'query' => $query,
+                'knowledge_base_ids' => $knowledgeBaseIds,
+            ]);
+            
+            return [];
+        }
+    }
+    
+    /**
+     * Get configurations for context rules
+     * Returns a simplified list of knowledge bases suitable for context rules
+     */
+    public function getConfigurationsForContextRules(User $user): array
+    {
+        try {
+            $knowledgeBases = KnowledgeBase::where(function ($q) use ($user) {
+                $q->where('user_id', $user->id)
+                  ->orWhere('is_public', true);
+            })
+            ->where('is_active', true)
+            ->withCount('entries')
+            ->get();
+            
+            $configs = [];
+            foreach ($knowledgeBases as $kb) {
+                $configs[] = [
+                    'id' => $kb->id,
+                    'name' => $kb->name,
+                    'description' => $kb->description,
+                    'entries_count' => $kb->entries_count,
+                    'source_type' => $kb->source_type,
+                    'is_public' => $kb->is_public,
+                ];
+            }
+            
+            return $configs;
+        } catch (\Exception $e) {
+            Log::error('Failed to get knowledge base configurations for context rules', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+            ]);
+            
+            return [];
+        }
+    }
+
+    /**
+     * Advanced search across knowledge bases with multiple filtering options.
+     *
+     * @param User $user The authenticated user
+     * @param array $params Search parameters
+     * @return JsonResponse
+     */
+    public function advancedSearch(User $user, array $params): JsonResponse
+    {
+        try {
+            // Extract parameters
+            $query = $params['query'];
+            $knowledgeBaseIds = $params['knowledge_base_ids'] ?? null;
+            $searchMode = $params['search_mode'] ?? 'hybrid';
+            $minSimilarity = $params['min_similarity'] ?? 0.7;
+            $limit = $params['limit'] ?? 20;
+            $filters = $params['filters'] ?? [];
+            $includeMetadata = $params['include_metadata'] ?? false;
+            $vectorWeight = $params['vector_weight'] ?? null;
+            $keywordWeight = $params['keyword_weight'] ?? null;
+            
+            // Access control: If specific knowledge bases are requested, verify access
+            if (!empty($knowledgeBaseIds)) {
+                $allowedKnowledgeBases = KnowledgeBase::where(function ($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->orWhere('is_public', true);
+                })
+                ->where('is_active', true)
+                ->whereIn('id', $knowledgeBaseIds)
+                ->pluck('id')
+                ->toArray();
+                
+                // If none of the requested knowledge bases are accessible
+                if (empty($allowedKnowledgeBases)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'None of the requested knowledge bases are accessible'
+                    ], 403);
+                }
+                
+                // Update the knowledge base IDs to only include accessible ones
+                $knowledgeBaseIds = $allowedKnowledgeBases;
+            } else {
+                // If no specific knowledge bases are requested, get all accessible ones
+                $knowledgeBaseIds = KnowledgeBase::where(function ($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->orWhere('is_public', true);
+                })
+                ->where('is_active', true)
+                ->pluck('id')
+                ->toArray();
+            }
+            
+            // Get vector search service
+            $vectorSearchService = app(\App\Services\KnowledgeBase\VectorSearch\VectorSearchService::class);
+            
+            // Perform search based on mode
+            $results = match ($searchMode) {
+                'vector' => $vectorSearchService->vectorSearch($query, $knowledgeBaseIds, $limit, $minSimilarity),
+                'keyword' => $this->keywordSearch($query, $knowledgeBaseIds, $limit, $filters),
+                'hybrid' => $vectorSearchService->hybridSearch(
+                    $query, 
+                    $knowledgeBaseIds, 
+                    $limit, 
+                    $minSimilarity, 
+                    $vectorWeight, 
+                    $keywordWeight
+                ),
+                default => $vectorSearchService->hybridSearch(
+                    $query, 
+                    $knowledgeBaseIds, 
+                    $limit, 
+                    $minSimilarity, 
+                    $vectorWeight, 
+                    $keywordWeight
+                )
+            };
+            
+            // Apply additional filters
+            $results = $this->applySearchFilters($results, $filters);
+            
+            // Format results
+            $formattedResults = $this->formatSearchResults($results, $includeMetadata);
+            
+            return response()->json([
+                'success' => true,
+                'query' => $query,
+                'search_mode' => $searchMode,
+                'total' => count($formattedResults),
+                'results' => $formattedResults,
+                'knowledge_base_ids' => $knowledgeBaseIds
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error in advanced search', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'params' => $params
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error performing advanced search: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Apply additional filters to search results.
+     * 
+     * @param Collection $results Initial search results
+     * @param array $filters Filters to apply
+     * @return Collection Filtered results
+     */
+    protected function applySearchFilters($results, array $filters): Collection
+    {
+        // Filter by entry types if specified
+        if (!empty($filters['entry_types'])) {
+            $results = $results->filter(function ($entry) use ($filters) {
+                return in_array($entry->source_type, $filters['entry_types']);
+            });
+        }
+        
+        // Filter by tags if specified
+        if (!empty($filters['tags'])) {
+            $results = $results->filter(function ($entry) use ($filters) {
+                $entryTags = $entry->tags ?? [];
+                return !empty(array_intersect($entryTags, $filters['tags']));
+            });
+        }
+        
+        // Exclude chunks if requested
+        if (!empty($filters['exclude_chunks']) && $filters['exclude_chunks'] === true) {
+            $results = $results->filter(function ($entry) {
+                return empty($entry->parent_entry_id);
+            });
+        }
+        
+        // Only include chunks if requested
+        if (!empty($filters['only_chunks']) && $filters['only_chunks'] === true) {
+            $results = $results->filter(function ($entry) {
+                return !empty($entry->parent_entry_id);
+            });
+        }
+        
+        // Filter by parent entry if specified
+        if (!empty($filters['parent_entry_id'])) {
+            $results = $results->filter(function ($entry) use ($filters) {
+                return $entry->parent_entry_id === $filters['parent_entry_id'];
+            });
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * Format search results for consistent API response.
+     * 
+     * @param Collection $results Search results
+     * @param bool $includeMetadata Whether to include metadata
+     * @return array Formatted results
+     */
+    protected function formatSearchResults($results, bool $includeMetadata = false): array
+    {
+        return $results->map(function ($entry) use ($includeMetadata) {
+            $formatted = [
+                'id' => $entry->id,
+                'knowledge_base_id' => $entry->knowledge_base_id,
+                'title' => $entry->title,
+                'content' => $entry->content,
+                'summary' => $entry->summary,
+                'source_url' => $entry->source_url,
+                'source_type' => $entry->source_type,
+                'tags' => $entry->tags,
+                'similarity_score' => $entry->similarity_score ?? null,
+                'created_at' => $entry->created_at,
+                'updated_at' => $entry->updated_at,
+            ];
+            
+            // Add information about chunks
+            if (!empty($entry->parent_entry_id)) {
+                $formatted['parent_entry_id'] = $entry->parent_entry_id;
+                $formatted['chunk_id'] = $entry->chunk_id;
+                $formatted['chunk_index'] = $entry->chunk_index;
+            }
+            
+            // Include keyword highlights if available
+            if (!empty($entry->keyword_highlights)) {
+                $formatted['keyword_highlights'] = $entry->keyword_highlights;
+            }
+            
+            // Include metadata if requested and available
+            if ($includeMetadata && !empty($entry->metadata)) {
+                $formatted['metadata'] = $entry->metadata;
+            }
+            
+            return $formatted;
+        })->values()->toArray();
+    }
+    
+    /**
+     * Perform keyword-based search without vector embeddings.
+     * This is a fallback when vector search is not available.
+     * 
+     * @param string $query Search query
+     * @param array|null $knowledgeBaseIds Knowledge base IDs to search within
+     * @param int $limit Maximum number of results
+     * @param array $filters Additional filters
+     * @return Collection Search results
+     */
+    protected function keywordSearch(string $query, ?array $knowledgeBaseIds = null, int $limit = 20, array $filters = []): Collection
+    {
+        // Build base query
+        $baseQuery = KnowledgeEntry::where('is_active', true);
+        
+        // Limit to specific knowledge bases if provided
+        if (!empty($knowledgeBaseIds)) {
+            $baseQuery->whereIn('knowledge_base_id', $knowledgeBaseIds);
+        }
+        
+        // Apply full-text search
+        $baseQuery->whereFullText(['title', 'content'], $query);
+        
+        // Get results
+        return $baseQuery->limit($limit)->get();
+    }
+    
+    /**
+     * Get statistics and analytics for a knowledge base.
+     * 
+     * @param User $user The authenticated user
+     * @param string $id Knowledge base ID
+     * @return JsonResponse
+     */
+    public function getKnowledgeBaseStats(User $user, string $id): JsonResponse
+    {
+        try {
+            $knowledgeBase = KnowledgeBase::where('id', $id)
+                ->where(function ($query) use ($user) {
+                    $query->where('user_id', $user->id)
+                          ->orWhere('is_public', true);
+                })
+                ->first();
+
+            if (!$knowledgeBase) {
+                return response()->json(['message' => 'Knowledge base not found'], 404);
+            }
+            
+            // Get entries
+            $entries = $knowledgeBase->entries;
+            $totalEntries = $entries->count();
+            
+            // Count entries by type
+            $entriesByType = $entries->groupBy('source_type')
+                ->map(function ($group) {
+                    return $group->count();
+                })
+                ->toArray();
+            
+            // Count entries with vector embeddings
+            $vectorIndexedCount = $entries->where('vector_indexed', true)->count();
+            $vectorIndexedPercentage = $totalEntries > 0 ? round(($vectorIndexedCount / $totalEntries) * 100, 2) : 0;
+            
+            // Count chunks
+            $chunksCount = $entries->whereNotNull('parent_entry_id')->count();
+            $parentEntriesCount = $entries->filter(function ($entry) {
+                return isset($entry->metadata['has_chunks']) && $entry->metadata['has_chunks'] === true;
+            })->count();
+            
+            // Count entries by tag
+            $tags = [];
+            foreach ($entries as $entry) {
+                if (!empty($entry->tags)) {
+                    foreach ($entry->tags as $tag) {
+                        if (!isset($tags[$tag])) {
+                            $tags[$tag] = 0;
+                        }
+                        $tags[$tag]++;
+                    }
+                }
+            }
+            
+            // Sort tags by count
+            arsort($tags);
+            
+            // Get creation and update dates
+            $oldestEntry = $entries->sortBy('created_at')->first();
+            $newestEntry = $entries->sortByDesc('created_at')->first();
+            $lastUpdatedEntry = $entries->sortByDesc('updated_at')->first();
+            
+            // Assemble stats
+            $stats = [
+                'knowledge_base' => [
+                    'id' => $knowledgeBase->id,
+                    'name' => $knowledgeBase->name,
+                    'description' => $knowledgeBase->description,
+                    'source_type' => $knowledgeBase->source_type,
+                    'created_at' => $knowledgeBase->created_at,
+                    'updated_at' => $knowledgeBase->updated_at,
+                ],
+                'entries' => [
+                    'total' => $totalEntries,
+                    'by_type' => $entriesByType,
+                    'vector_indexed' => [
+                        'count' => $vectorIndexedCount,
+                        'percentage' => $vectorIndexedPercentage,
+                    ],
+                    'chunks' => [
+                        'total_chunks' => $chunksCount,
+                        'parent_entries' => $parentEntriesCount,
+                    ],
+                    'oldest' => $oldestEntry ? [
+                        'id' => $oldestEntry->id,
+                        'title' => $oldestEntry->title,
+                        'created_at' => $oldestEntry->created_at,
+                    ] : null,
+                    'newest' => $newestEntry ? [
+                        'id' => $newestEntry->id,
+                        'title' => $newestEntry->title,
+                        'created_at' => $newestEntry->created_at,
+                    ] : null,
+                    'last_updated' => $lastUpdatedEntry ? [
+                        'id' => $lastUpdatedEntry->id,
+                        'title' => $lastUpdatedEntry->title,
+                        'updated_at' => $lastUpdatedEntry->updated_at,
+                    ] : null,
+                ],
+                'tags' => $tags,
+                'vector_search_settings' => [
+                    'similarity_threshold' => $knowledgeBase->similarity_threshold,
+                    'embedding_model' => $knowledgeBase->embedding_model,
+                    'use_hybrid_search' => $knowledgeBase->use_hybrid_search,
+                    'keyword_search_weight' => $knowledgeBase->keyword_search_weight,
+                    'vector_search_weight' => $knowledgeBase->vector_search_weight,
+                    'auto_chunk_content' => $knowledgeBase->auto_chunk_content,
+                    'chunk_size' => $knowledgeBase->chunk_size,
+                    'chunk_overlap' => $knowledgeBase->chunk_overlap,
+                ],
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'stats' => $stats,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting knowledge base stats', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'knowledge_base_id' => $id
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error getting knowledge base stats: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Generate keyword highlights for an entry.
+     * 
+     * @param User $user The authenticated user
+     * @param string $entryId Entry ID
+     * @return JsonResponse
+     */
+    public function generateKeywordHighlights(User $user, string $entryId): JsonResponse
+    {
+        try {
+            $entry = KnowledgeEntry::with('knowledgeBase')
+                ->where('id', $entryId)
+                ->first();
+            
+            if (!$entry) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Entry not found'
+                ], 404);
+            }
+            
+            // Check access to the knowledge base
+            if ($entry->knowledgeBase->user_id !== $user->id && !$entry->knowledgeBase->is_public) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Access denied to this entry'
+                ], 403);
+            }
+            
+            // Generate highlights
+            $highlights = $entry->generateKeywordHighlights();
+            
+            // Save the entry with highlights
+            $entry->save();
+            
+            return response()->json([
+                'success' => true,
+                'entry_id' => $entry->id,
+                'title' => $entry->title,
+                'keyword_highlights' => $highlights,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error generating keyword highlights', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'entry_id' => $entryId
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error generating keyword highlights: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

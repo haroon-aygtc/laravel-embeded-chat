@@ -47,7 +47,6 @@ class FollowUpConfig extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'id',
         'user_id',
         'name',
         'enable_follow_up_questions',
@@ -69,11 +68,18 @@ class FollowUpConfig extends Model
         'max_follow_up_questions' => 'integer',
         'generate_automatically' => 'boolean',
         'is_default' => 'boolean',
-        'predefined_question_sets' => 'json',
-        'topic_based_question_sets' => 'json',
+        'predefined_question_sets' => 'array',
+        'topic_based_question_sets' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
+     */
+    protected $hidden = [];
 
     /**
      * Boot the model.
@@ -85,6 +91,24 @@ class FollowUpConfig extends Model
         static::creating(function ($model) {
             if (empty($model->id)) {
                 $model->id = (string) Str::uuid();
+            }
+        });
+
+        // When creating a default configuration, ensure it's the only default
+        static::creating(function ($config) {
+            if ($config->is_default) {
+                // Set all other configs to non-default
+                static::where('is_default', true)->update(['is_default' => false]);
+            }
+        });
+
+        // When updating to make a config default, ensure it's the only default
+        static::updating(function ($config) {
+            if ($config->isDirty('is_default') && $config->is_default) {
+                // Set all other configs to non-default
+                static::where('id', '!=', $config->id)
+                      ->where('is_default', true)
+                      ->update(['is_default' => false]);
             }
         });
     }

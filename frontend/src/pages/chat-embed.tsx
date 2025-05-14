@@ -1,148 +1,176 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import ChatWidget from "@/components/chat/ChatWidget";
+import { useRouter } from "next/router";
+import { widgetClientService, WidgetConfig, ChatSession } from "@/services/widgetClientService";
+import { ChatWidget } from "@/components/chat/ChatWidget";
 
-const ChatEmbedPage = () => {
-  const [searchParams] = useSearchParams();
-  const [params, setParams] = useState({
-    contextRuleId: searchParams.get("contextRuleId") || undefined,
-    title: searchParams.get("title") || "Chat Assistant",
-    subtitle: searchParams.get("subtitle") || "Ask me anything",
-    position:
-      (searchParams.get("position") as
-        | "bottom-right"
-        | "bottom-left"
-        | "top-right"
-        | "top-left") || "bottom-right",
-    contextMode:
-      (searchParams.get("contextMode") as "restricted" | "general") ||
-      "general",
-    contextName: searchParams.get("contextName") || "",
-    primaryColor:
-      searchParams.get("color") ||
-      searchParams.get("primaryColor") ||
-      "#3b82f6",
-    avatarSrc: searchParams.get("avatarSrc") || undefined,
-    widgetId: searchParams.get("widgetId") || "default",
-    theme: (searchParams.get("theme") as "light" | "dark") || "light",
-    autoOpen: searchParams.get("autoOpen") === "true",
-    deviceType: searchParams.get("deviceType") || "desktop",
-    allowAttachments: searchParams.get("allowAttachments") !== "false",
-    allowVoice: searchParams.get("allowVoice") !== "false",
-    allowEmoji: searchParams.get("allowEmoji") !== "false",
-    width: parseInt(searchParams.get("width") || "380", 10),
-    height: parseInt(searchParams.get("height") || "600", 10),
-  });
+interface Message {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  created_at: string;
+}
 
-  // Apply any styles needed for the iframe
+const ChatEmbedPage: React.FC = () => {
+  const router = useRouter();
+  const { widgetId, sessionId } = router.query;
+  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | null>(null);
+  const [chatSession, setChatSession] = useState<ChatSession | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [sending, setSending] = useState(false);
+  
+  // Load widget configuration and initialize session
   useEffect(() => {
-    document.body.style.margin = "0";
-    document.body.style.padding = "0";
-    document.body.style.overflow = "hidden";
-
-    // Apply theme to body
-    if (params.theme === "dark") {
-      document.body.classList.add("dark");
-    } else {
-      document.body.classList.remove("dark");
-    }
-
-    // Listen for messages from parent window
-    const handleMessage = (event: MessageEvent) => {
-      // Verify the origin for security
-      if (event.origin !== window.location.origin) return;
-
-      // Handle resize events
-      if (event.data && event.data.type === "chat-widget-resize") {
-        // You could update state here if needed to adjust the widget size
-        console.log("Resize event received:", event.data);
+    const initWidget = async () => {
+      if (!widgetId || typeof widgetId !== 'string') {
+        setError('Widget ID is required');
+        setLoading(false);
+        return;
       }
-
-      // Handle custom events from parent
-      if (event.data && event.data.type === "chat-widget-config") {
-        // Update widget configuration dynamically
-        setParams((prev) => ({
-          ...prev,
-          ...event.data.config,
-        }));
+      
+      try {
+        // Fetch widget configuration
+        const config = await widgetClientService.getWidgetConfig(widgetId);
+        setWidgetConfig(config);
+        
+        // Create or use existing session
+        let session: ChatSession;
+        if (sessionId && typeof sessionId === 'string') {
+          session = { session_id: sessionId, name: 'Embedded Chat' };
+        } else {
+          session = await widgetClientService.createChatSession(widgetId);
+        }
+        setChatSession(session);
+        
+        // Fetch existing messages
+        await loadMessages(session.session_id);
+        
+        // Notify parent window that widget is loaded
+        window.parent.postMessage({ action: 'widget-loaded' }, '*');
+        
+        setLoading(false);
+      } catch (err) {
+        console.error('Error initializing chat widget:', err);
+        setError('Failed to initialize chat. Please try again later.');
+        setLoading(false);
       }
     };
-
-    window.addEventListener("message", handleMessage);
-
-    // Notify parent that the iframe is loaded
+    
+    initWidget();
+  }, [widgetId, sessionId]);
+  
+  // Load messages for the session
+  const loadMessages = async (sessionId: string) => {
     try {
-      window.parent.postMessage(
-        {
-          type: "chat-widget-loaded",
-          widgetId: params.widgetId,
-          deviceInfo: {
-            userAgent: navigator.userAgent,
-            viewport: {
-              width: window.innerWidth,
-              height: window.innerHeight,
-            },
-          },
-        },
-        window.location.origin,
-      );
-    } catch (e) {
-      // Silently fail if parent communication fails
-    }
-
-    return () => {
-      document.body.style.margin = "";
-      document.body.style.padding = "";
-      document.body.style.overflow = "";
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [params.widgetId, params.theme]);
-
-  // Send events to parent window
-  const handleSendEvent = (eventType: string, data: any) => {
-    try {
-      window.parent.postMessage(
-        {
-          type: "chat-widget-event",
-          eventType,
-          data,
-          widgetId: params.widgetId,
-          timestamp: new Date().toISOString(),
-        },
-        window.location.origin,
-      );
-    } catch (e) {
-      // Silently fail if parent communication fails
+      const response = await widgetClientService.getMessages(sessionId);
+      if (response.status === 'success') {
+        // Sort messages by creation date (oldest first)
+        const sortedMessages = response.data.data.sort((a: Message, b: Message) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        setMessages(sortedMessages);
+      }
+    } catch (err) {
+      console.error('Error loading messages:', err);
     }
   };
-
-  // Custom message handler that also notifies the parent
-  const handleSendMessage = async (message: string) => {
-    // Notify parent of message sent
-    handleSendEvent("message-sent", { content: message });
+  
+  // Send a message
+  const sendMessage = async (content: string) => {
+    if (!chatSession || !content.trim()) return;
+    
+    setSending(true);
+    
+    try {
+      // Optimistically add user message to UI
+      const tempUserMessage: Message = {
+        id: 'temp-' + Date.now(),
+        content,
+        role: 'user',
+        created_at: new Date().toISOString()
+      };
+      
+      setMessages(prev => [...prev, tempUserMessage]);
+      
+      // Send to API
+      const response = await widgetClientService.sendMessage(chatSession.session_id, content);
+      
+      if (response.status === 'success') {
+        // Replace temp message with real one and add AI response
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempUserMessage.id);
+          return [
+            ...filtered, 
+            response.data.user_message,
+            response.data.ai_message
+          ];
+        });
+      }
+    } catch (err) {
+      console.error('Error sending message:', err);
+      // Remove temp message on error
+      setMessages(prev => prev.filter(m => m.id !== 'temp-' + Date.now()));
+      
+      // Show error message
+      setError('Failed to send message. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setSending(false);
+    }
   };
-
+  
+  // Close widget
+  const handleClose = () => {
+    window.parent.postMessage({ action: 'close-widget' }, '*');
+  };
+  
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  
+  // Error state
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 p-4">
+        <div className="text-red-500 text-center mb-4">
+          <svg className="h-12 w-12 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          {error}
+        </div>
+        <button 
+          onClick={handleClose}
+          className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    );
+  }
+  
+  // Main chat UI
   return (
-    <div className="w-full h-screen">
-      <ChatWidget
-        isFullPage={true}
-        title={params.title}
-        subtitle={params.subtitle}
-        position={params.position}
-        contextMode={params.contextMode}
-        contextName={params.contextName}
-        contextRuleId={params.contextRuleId}
-        primaryColor={params.primaryColor}
-        avatarSrc={params.avatarSrc}
-        embedded={true}
-        initiallyOpen={params.autoOpen}
-        allowAttachments={params.allowAttachments}
-        allowVoice={params.allowVoice}
-        allowEmoji={params.allowEmoji}
-        width={params.width}
-        height={params.height}
-        onSendMessage={handleSendMessage}
-      />
+    <div className="flex flex-col h-screen bg-white">
+      {widgetConfig && (
+        <ChatWidget
+          title={widgetConfig.title || 'Chat'}
+          subtitle={widgetConfig.subtitle || null}
+          messages={messages}
+          onSendMessage={sendMessage}
+          onClose={handleClose}
+          isLoading={sending}
+          visualSettings={widgetConfig.visual_settings}
+          contentSettings={widgetConfig.content_settings}
+          embedded={true}
+        />
+      )}
     </div>
   );
 };

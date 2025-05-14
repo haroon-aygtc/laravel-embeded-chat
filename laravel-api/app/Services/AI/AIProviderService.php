@@ -695,8 +695,303 @@ class AIProviderService
         ];
     }
 
-    // Additional test methods for other providers would go here
-    // testGrokConnection, testHuggingFaceConnection, etc.
+    /**
+     * Test Grok API connection
+     */
+    private function testGrokConnection(string $apiKey, string $baseUrl, int $timeout, array $data): array
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->post("{$baseUrl}/chat/completions", [
+            'model' => 'grok-1',
+            'messages' => [
+                ['role' => 'user', 'content' => 'Hello']
+            ],
+            'max_tokens' => 10,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to connect to Grok API: ' . $response->body());
+        }
+
+        return [
+            'models' => [
+                [
+                    'id' => 'grok-1',
+                    'name' => 'Grok-1',
+                    'description' => 'xAI\'s conversational AI model',
+                    'maxTokens' => 8192,
+                    'contextWindow' => 8192,
+                    'capabilities' => ['text', 'code'],
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Test HuggingFace API connection
+     */
+    private function testHuggingFaceConnection(string $apiKey, string $baseUrl, int $timeout, array $data): array
+    {
+        // Test with a simple inference request to a popular model
+        $model = $data['defaultModel'] ?? 'meta-llama/Llama-2-70b-chat-hf';
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->post("{$baseUrl}/{$model}", [
+            'inputs' => 'Hello, how are you?',
+            'parameters' => [
+                'max_new_tokens' => 10,
+                'temperature' => 0.7,
+            ],
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to connect to HuggingFace API: ' . $response->body());
+        }
+
+        // Return predefined models since HuggingFace has thousands of models
+        return [
+            'models' => [
+                [
+                    'id' => 'meta-llama/Llama-2-70b-chat-hf',
+                    'name' => 'Llama 2 70B Chat',
+                    'description' => 'Meta\'s large language model optimized for chat',
+                    'maxTokens' => 4096,
+                    'contextWindow' => 4096,
+                    'capabilities' => ['text', 'code'],
+                ],
+                [
+                    'id' => 'mistralai/Mistral-7B-Instruct-v0.2',
+                    'name' => 'Mistral 7B Instruct',
+                    'description' => 'Mistral\'s instruction-tuned model',
+                    'maxTokens' => 8192,
+                    'contextWindow' => 8192,
+                    'capabilities' => ['text', 'code'],
+                ],
+                [
+                    'id' => 'google/gemma-7b-it',
+                    'name' => 'Gemma 7B Instruct',
+                    'description' => 'Google\'s lightweight instruction-tuned model',
+                    'maxTokens' => 8192,
+                    'contextWindow' => 8192,
+                    'capabilities' => ['text', 'code'],
+                ],
+            ]
+        ];
+    }
+
+    /**
+     * Test OpenRouter API connection
+     */
+    private function testOpenRouterConnection(string $apiKey, string $baseUrl, int $timeout, array $data): array
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => config('app.name'),
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->post("{$baseUrl}/chat/completions", [
+            'model' => 'openai/gpt-3.5-turbo',
+            'messages' => [
+                ['role' => 'user', 'content' => 'Hello']
+            ],
+            'max_tokens' => 10,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to connect to OpenRouter API: ' . $response->body());
+        }
+
+        // Get available models from OpenRouter
+        $modelsResponse = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->get("{$baseUrl}/models");
+
+        $models = [];
+        if ($modelsResponse->successful()) {
+            $rawModels = $modelsResponse->json('data', []);
+            foreach ($rawModels as $model) {
+                $models[] = [
+                    'id' => $model['id'],
+                    'name' => $model['name'] ?? $this->formatModelName($model['id']),
+                    'description' => $model['description'] ?? '',
+                    'maxTokens' => $model['context_length'] ?? 4096,
+                    'contextWindow' => $model['context_length'] ?? 4096,
+                    'capabilities' => $this->getModelCapabilities($model['id']),
+                ];
+            }
+        }
+
+        return ['models' => $models];
+    }
+
+    /**
+     * Test Mistral API connection
+     */
+    private function testMistralConnection(string $apiKey, string $baseUrl, int $timeout, array $data): array
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->post("{$baseUrl}/chat/completions", [
+            'model' => 'mistral-large-latest',
+            'messages' => [
+                ['role' => 'user', 'content' => 'Hello']
+            ],
+            'max_tokens' => 10,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to connect to Mistral API: ' . $response->body());
+        }
+
+        // Get available models from Mistral
+        $modelsResponse = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->get("{$baseUrl}/models");
+
+        $models = [];
+        if ($modelsResponse->successful()) {
+            $rawModels = $modelsResponse->json('data', []);
+            foreach ($rawModels as $model) {
+                $models[] = [
+                    'id' => $model['id'],
+                    'name' => $model['name'] ?? $this->formatModelName($model['id']),
+                    'description' => $model['description'] ?? '',
+                    'maxTokens' => $model['max_tokens'] ?? 8192,
+                    'contextWindow' => $model['context_window'] ?? 8192,
+                    'capabilities' => $this->getModelCapabilities($model['id']),
+                ];
+            }
+        }
+
+        // If no models were found, return predefined models
+        if (empty($models)) {
+            $models = [
+                [
+                    'id' => 'mistral-large-latest',
+                    'name' => 'Mistral Large',
+                    'description' => 'Mistral\'s most powerful model',
+                    'maxTokens' => 32768,
+                    'contextWindow' => 32768,
+                    'capabilities' => ['text', 'code', 'reasoning'],
+                ],
+                [
+                    'id' => 'mistral-medium-latest',
+                    'name' => 'Mistral Medium',
+                    'description' => 'Balanced performance for most use cases',
+                    'maxTokens' => 32768,
+                    'contextWindow' => 32768,
+                    'capabilities' => ['text', 'code'],
+                ],
+                [
+                    'id' => 'mistral-small-latest',
+                    'name' => 'Mistral Small',
+                    'description' => 'Fast and efficient for everyday tasks',
+                    'maxTokens' => 32768,
+                    'contextWindow' => 32768,
+                    'capabilities' => ['text', 'code'],
+                ],
+            ];
+        }
+
+        return ['models' => $models];
+    }
+
+    /**
+     * Test DeepSeek API connection
+     */
+    private function testDeepSeekConnection(string $apiKey, string $baseUrl, int $timeout, array $data): array
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->post("{$baseUrl}/chat/completions", [
+            'model' => 'deepseek-chat',
+            'messages' => [
+                ['role' => 'user', 'content' => 'Hello']
+            ],
+            'max_tokens' => 10,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to connect to DeepSeek API: ' . $response->body());
+        }
+
+        return [
+            'models' => [
+                [
+                    'id' => 'deepseek-chat',
+                    'name' => 'DeepSeek Chat',
+                    'description' => 'General purpose chat model',
+                    'maxTokens' => 4096,
+                    'contextWindow' => 4096,
+                    'capabilities' => ['text', 'code'],
+                ],
+                [
+                    'id' => 'deepseek-coder',
+                    'name' => 'DeepSeek Coder',
+                    'description' => 'Specialized for code generation and understanding',
+                    'maxTokens' => 8192,
+                    'contextWindow' => 8192,
+                    'capabilities' => ['text', 'code'],
+                ],
+            ]
+        ];
+    }
+
+    /**
+     * Test Cohere API connection
+     */
+    private function testCohereConnection(string $apiKey, string $baseUrl, int $timeout, array $data): array
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout($timeout)->post("{$baseUrl}/generate", [
+            'model' => 'command',
+            'prompt' => 'Hello',
+            'max_tokens' => 10,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to connect to Cohere API: ' . $response->body());
+        }
+
+        // Get available models from Cohere
+        $models = [
+            [
+                'id' => 'command',
+                'name' => 'Command',
+                'description' => 'Cohere\'s flagship model for general purpose tasks',
+                'maxTokens' => 4096,
+                'contextWindow' => 4096,
+                'capabilities' => ['text', 'code'],
+            ],
+            [
+                'id' => 'command-light',
+                'name' => 'Command Light',
+                'description' => 'Faster and more efficient version of Command',
+                'maxTokens' => 4096,
+                'contextWindow' => 4096,
+                'capabilities' => ['text'],
+            ],
+            [
+                'id' => 'command-r',
+                'name' => 'Command R',
+                'description' => 'Optimized for reasoning tasks',
+                'maxTokens' => 4096,
+                'contextWindow' => 4096,
+                'capabilities' => ['text', 'reasoning'],
+            ],
+        ];
+
+        return ['models' => $models];
+    }
 
     /**
      * Format a model name for display

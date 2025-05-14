@@ -227,37 +227,112 @@ class ContextRuleService
     }
 
     /**
-     * Test a context rule with provided input
+     * Get knowledge bases available for this rule
+     */
+    public function getKnowledgeBases(string $ruleId): JsonResponse
+    {
+        try {
+            $rule = ContextRule::find($ruleId);
+            
+            if (!$rule) {
+                return response()->json(['message' => 'Context rule not found'], 404);
+            }
+            
+            // Check access permission
+            if (!$rule->is_public && $rule->user_id !== auth()->id() && !auth()->user()->isAdmin) {
+                return response()->json(['message' => 'Unauthorized access to this rule'], 403);
+            }
+            
+            // Get knowledge bases from the Knowledge Base service
+            $knowledgeBaseService = app(\App\Services\KnowledgeBase\KnowledgeBaseService::class);
+            $knowledgeBases = $knowledgeBaseService->getConfigurationsForContextRules(auth()->user());
+            
+            // Get IDs of knowledge bases used by this rule
+            $ruleKnowledgeBaseIds = $rule->metadata['knowledge_base_ids'] ?? [];
+            
+            // Mark which knowledge bases are used by this rule
+            foreach ($knowledgeBases as &$kb) {
+                $kb['is_used'] = in_array($kb['id'], $ruleKnowledgeBaseIds);
+            }
+            
+            return response()->json([
+                'knowledge_bases' => $knowledgeBases,
+                'rule_id' => $ruleId
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to get knowledge bases: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Test a context rule against a query
      */
     public function testRule(string $id, array $data): JsonResponse
     {
-        $rule = ContextRule::find($id);
-
-        if (!$rule) {
-            return response()->json(['message' => 'Context rule not found'], 404);
+        try {
+            if (empty($data['query'])) {
+                return response()->json(['message' => 'Query is required'], 400);
+            }
+            
+            $rule = ContextRule::find($id);
+            
+            if (!$rule) {
+                return response()->json(['message' => 'Context rule not found'], 404);
+            }
+            
+            // Check access permission
+            if (!$rule->is_public && $rule->user_id !== auth()->id() && !auth()->user()->isAdmin) {
+                return response()->json(['message' => 'Unauthorized access to this rule'], 403);
+            }
+            
+            $ruleContent = json_decode($rule->content, true);
+            
+            // Check if the query matches any of the rule's patterns
+            $matches = [];
+            if (!empty($ruleContent['patterns'])) {
+                foreach ($ruleContent['patterns'] as $pattern) {
+                    if (isset($pattern['regex']) && !empty($pattern['regex'])) {
+                        // Regex pattern matching
+                        if (@preg_match('/' . $pattern['regex'] . '/i', $data['query'])) {
+                            $matches[] = $pattern['regex'];
+                        }
+                    } elseif (isset($pattern['keyword']) && !empty($pattern['keyword'])) {
+                        // Keyword matching
+                        if (stripos($data['query'], $pattern['keyword']) !== false) {
+                            $matches[] = $pattern['keyword'];
+                        }
+                    }
+                }
+            }
+            
+            // See if knowledge base would be searched
+            $knowledgeBaseResults = [];
+            if (!empty($ruleContent['useKnowledgeBase']) && $ruleContent['useKnowledgeBase'] === true) {
+                if (!empty($ruleContent['knowledgeBaseIds'])) {
+                    // Get potential knowledge base matches
+                    $knowledgeBaseService = app(\App\Services\KnowledgeBase\KnowledgeBaseService::class);
+                    $knowledgeBaseResults = $knowledgeBaseService->searchForAIContext(
+                        auth()->user(), 
+                        $data['query'], 
+                        $ruleContent['knowledgeBaseIds'],
+                        3,
+                        0.7
+                    );
+                }
+            }
+            
+            return response()->json([
+                'result' => 'Success',
+                'rule_matches' => !empty($matches),
+                'matches' => $matches,
+                'would_apply_rule' => !empty($matches),
+                'knowledge_base_results' => $knowledgeBaseResults,
+                'knowledge_base_would_be_searched' => !empty($knowledgeBaseResults),
+                'test_query' => $data['query']
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Error testing rule: ' . $e->getMessage()], 500);
         }
-
-        // Check access permission
-        if (!$rule->is_public && $rule->user_id !== auth()->id() && !auth()->user()->isAdmin) {
-            return response()->json(['message' => 'Unauthorized access to this rule'], 403);
-        }
-
-        // In a real app, you would apply the context rule logic to the input
-        // For example, using an AI service or pattern matching
-
-        // Mock implementation for demonstration
-        $result = [
-            'ruleId' => $rule->id,
-            'ruleName' => $rule->name,
-            'input' => $data['input'],
-            'output' => "Processed: {$data['input']} using rule: {$rule->name}",
-            'matches' => true,
-            'score' => 0.85,
-            'parameters' => $data['parameters'] ?? [],
-            'timestamp' => now()->toIso8601String(),
-        ];
-
-        return response()->json($result);
     }
 
     /**
@@ -370,43 +445,5 @@ class ContextRuleService
         }
 
         return response()->json($templates[$id]);
-    }
-
-    /**
-     * Get knowledge bases associated with a context rule
-     */
-    public function getKnowledgeBases(string $ruleId): JsonResponse
-    {
-        $rule = ContextRule::find($ruleId);
-
-        if (!$rule) {
-            return response()->json(['message' => 'Context rule not found'], 404);
-        }
-
-        // Check access permission
-        if (!$rule->is_public && $rule->user_id !== auth()->id() && !auth()->user()->isAdmin) {
-            return response()->json(['message' => 'Unauthorized access to this rule'], 403);
-        }
-
-        // In a real app, you would fetch the associated knowledge bases from the database
-        // Mock implementation for demonstration
-        $knowledgeBases = [
-            [
-                'id' => '1',
-                'name' => 'Product Documentation',
-                'description' => 'Official documentation for our products',
-                'documentCount' => 125,
-                'lastUpdated' => now()->subDays(2)->toIso8601String(),
-            ],
-            [
-                'id' => '2',
-                'name' => 'FAQ Database',
-                'description' => 'Frequently asked questions and answers',
-                'documentCount' => 78,
-                'lastUpdated' => now()->subDays(5)->toIso8601String(),
-            ],
-        ];
-
-        return response()->json($knowledgeBases);
     }
 }

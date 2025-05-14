@@ -24,7 +24,7 @@ import {
     toggleAIProviderStatus,
     getAIProviderModels,
     setAIProviderDefaultModel
-} from '@/services/api/features/aiProvidersfeature'
+} from '@/services/api/features/aiProvidersfeatures'
 
 export default function AIProviderManagement() {
     const [providers, setProviders] = useState<AIProvider[]>([])

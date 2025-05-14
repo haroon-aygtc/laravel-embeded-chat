@@ -6,15 +6,9 @@
  */
 
 import logger from "@/utils/logger";
-import { api } from "./api/middleware/apiMiddleware";
+import { followUpApi, FollowUpQuestion } from "./api/features/followupfeatures";
 
-export interface FollowUpQuestionData {
-  id?: string;
-  configId: string;
-  question: string;
-  displayOrder?: number;
-  isActive?: boolean;
-}
+export type FollowUpQuestionData = FollowUpQuestion;
 
 const followUpQuestionService = {
   /**
@@ -24,13 +18,11 @@ const followUpQuestionService = {
     configId: string,
   ): Promise<FollowUpQuestionData[]> => {
     try {
-      const response = await api.get<FollowUpQuestionData[]>(
-        `/follow-up-configs/${configId}/questions`,
-      );
+      const response = await followUpApi.getQuestions(configId);
 
       if (!response.success) {
         throw new Error(
-          response.error?.message || "Failed to fetch follow-up questions",
+          response.error?.message || "Failed to fetch follow-up questions"
         );
       }
 
@@ -51,14 +43,14 @@ const followUpQuestionService = {
     data: FollowUpQuestionData,
   ): Promise<FollowUpQuestionData | null> => {
     try {
-      const response = await api.post<FollowUpQuestionData>(
-        "/follow-up-questions",
+      const response = await followUpApi.addQuestion(
+        data.config_id,
         data,
       );
 
       if (!response.success || !response.data) {
         throw new Error(
-          response.error?.message || "Failed to create follow-up question",
+          response.error?.message || "Failed to create follow-up question"
         );
       }
 
@@ -77,14 +69,11 @@ const followUpQuestionService = {
     data: Partial<FollowUpQuestionData>,
   ): Promise<FollowUpQuestionData | null> => {
     try {
-      const response = await api.put<FollowUpQuestionData>(
-        `/follow-up-questions/${id}`,
-        data,
-      );
+      const response = await followUpApi.updateQuestion(id, data);
 
       if (!response.success || !response.data) {
         throw new Error(
-          response.error?.message || "Failed to update follow-up question",
+          response.error?.message || "Failed to update follow-up question"
         );
       }
 
@@ -100,13 +89,11 @@ const followUpQuestionService = {
    */
   deleteQuestion: async (id: string): Promise<boolean> => {
     try {
-      const response = await api.delete<{ success: boolean }>(
-        `/follow-up-questions/${id}`,
-      );
+      const response = await followUpApi.deleteQuestion(id);
 
       if (!response.success) {
         throw new Error(
-          response.error?.message || "Failed to delete follow-up question",
+          response.error?.message || "Failed to delete follow-up question"
         );
       }
 
@@ -125,16 +112,11 @@ const followUpQuestionService = {
     questionIds: string[],
   ): Promise<boolean> => {
     try {
-      const response = await api.put<{ success: boolean }>(
-        `/follow-up-configs/${configId}/questions/reorder`,
-        {
-          questionIds,
-        },
-      );
+      const response = await followUpApi.reorderQuestions(configId, questionIds);
 
       if (!response.success) {
         throw new Error(
-          response.error?.message || "Failed to reorder follow-up questions",
+          response.error?.message || "Failed to reorder follow-up questions"
         );
       }
 
@@ -156,21 +138,35 @@ const followUpQuestionService = {
     limit: number = 3,
   ): Promise<string[]> => {
     try {
-      const response = await api.get<string[]>(
-        `/follow-up-configs/${configId}/questions/chat`,
-        {
-          params: { limit },
-        },
-      );
+      const response = await followUpApi.getQuestions(configId);
 
       if (!response.success) {
         throw new Error(
           response.error?.message ||
-            "Failed to fetch follow-up questions for chat",
+            "Failed to fetch follow-up questions for chat"
         );
       }
 
-      return response.data || [];
+      // Get active questions, sorted by priority and limit to requested amount
+      const questions = (response.data || [])
+        .filter(q => q.is_active)
+        .sort((a, b) => {
+          // Sort by priority first
+          const priorities = { high: 3, medium: 2, low: 1 };
+          const priorityDiff = 
+            (priorities[b.priority] || 0) - (priorities[a.priority] || 0);
+          
+          // If same priority, sort by display order
+          if (priorityDiff === 0) {
+            return (a.display_order || 0) - (b.display_order || 0);
+          }
+          
+          return priorityDiff;
+        })
+        .slice(0, limit)
+        .map(q => q.question);
+
+      return questions;
     } catch (error) {
       logger.error(
         `Error fetching follow-up questions for chat with config ${configId}`,

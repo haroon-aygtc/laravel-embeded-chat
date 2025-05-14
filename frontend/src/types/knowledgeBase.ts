@@ -143,6 +143,7 @@ export interface GetEntriesParams {
 export interface FindSimilarParams {
     limit?: number;
     min_similarity_score?: number;
+    use_vectors?: boolean;
 }
 
 // Import/Export related interfaces
@@ -171,12 +172,12 @@ export interface KnowledgeBaseQueryLog {
 }
 
 export interface KnowledgeBaseAnalytics {
-    totalQueries: number;
-    queriesOverTime: Array<{ date: string; count: number }>;
-    topQueries: Array<{ query: string; count: number }>;
-    averageResultsPerQuery: number;
-    knowledgeBaseUsage: Array<{ id: string; name: string; queries: number }>;
-    userActivity: Array<{ userId: string; queries: number }>;
+    total_bases: number;
+    total_entries: number;
+    entries_with_embeddings: number;
+    queries_last_30_days: number;
+    average_query_time: number;
+    most_queried_bases: Array<{ id: string; name: string; queries: number }>;
 }
 
 // Context rules
@@ -194,12 +195,57 @@ export interface KnowledgeBaseContextRule {
 export interface KnowledgeBaseConfig {
     id: string;
     name: string;
-    description?: string;
-    type: string;
-    url?: string;
-    credentials?: Record<string, any>;
-    settings?: Record<string, any>;
-    isActive: boolean;
-    createdAt: string;
-    updatedAt: string;
+    description: string;
+    source_type: 'api' | 'database' | 'file' | 'scraper' | 'manual';
+    is_active: boolean;
+    is_public: boolean;
+    entries_count?: number;
+    metadata?: Record<string, any>;
+    user_id?: string;
+    created_at?: string;
+    updated_at?: string;
+    is_used?: boolean; // For context rules integration
+}
+
+export interface KnowledgeBaseEntry {
+    id: string;
+    knowledge_base_id: string;
+    title: string;
+    content: string;
+    formatted_content?: string;
+    summary?: string;
+    tags?: string[];
+    source_url?: string;
+    source_type?: string;
+    vector_embedding?: number[];
+    similarity_score?: number;
+    metadata?: Record<string, any>;
+    is_active: boolean;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface KnowledgeBaseSearchResult {
+    id: string;
+    title: string;
+    content: string;
+    summary?: string;
+    source_url?: string;
+    source_type?: string;
+    similarity_score?: number;
+    knowledge_base: {
+        id: string;
+        name: string;
+        source_type: string;
+    };
+}
+
+export interface KnowledgeBaseForContextRule {
+    id: string;
+    name: string;
+    description: string;
+    entries_count: number;
+    source_type: string;
+    is_public: boolean;
+    is_used: boolean;
 } 

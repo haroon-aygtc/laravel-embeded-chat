@@ -10,11 +10,16 @@ use App\Http\Controllers\Api\Scraping\ScrapingController;
 use App\Http\Controllers\Api\Chat\ChatController;
 use App\Http\Controllers\Api\AI\AIController;
 use App\Http\Controllers\Api\ContextRule\ContextRuleController;
+use App\Http\Controllers\Api\PromptTemplate\PromptTemplateController;
 use App\Http\Controllers\Api\User\NotificationController;
 use App\Http\Controllers\Api\AI\AILogController;
 use App\Http\Controllers\Api\AI\AIProviderController;
 use App\Http\Controllers\Api\FollowUp\FollowUpController;
 use App\Http\Controllers\Api\KnowledgeBase\KnowledgeBaseController;
+use App\Http\Controllers\Api\KnowledgeBase\VectorSearchController;
+use App\Http\Controllers\Api\Widget\WidgetController;
+use App\Http\Controllers\Api\Widget\PublicWidgetController;
+use App\Http\Controllers\Api\Chat\PublicChatController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -112,13 +117,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/cache/{id}', [AIController::class, 'getCacheItem']);
         Route::post('/cache/clear', [AIController::class, 'clearCache']);
 
-        // Prompt management
-        Route::get('/prompt-templates', [AIController::class, 'getPromptTemplates']);
-        Route::get('/prompt-templates/{id}', [AIController::class, 'getPromptTemplate']);
-        Route::post('/prompt-templates', [AIController::class, 'createPromptTemplate']);
-        Route::put('/prompt-templates/{id}', [AIController::class, 'updatePromptTemplate']);
-        Route::delete('/prompt-templates/{id}', [AIController::class, 'deletePromptTemplate']);
-
         // AI Provider routes
         Route::post('/providers', [AIProviderController::class, 'store']);
         Route::get('/providers', [AIProviderController::class, 'index']);
@@ -173,19 +171,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications', [NotificationController::class, 'store']);
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
 
-    // AI logs routes
-    Route::get('/ai/logs', [AILogController::class, 'index']);
-    Route::get('/ai/logs/{id}', [AILogController::class, 'show']);
-    Route::post('/ai/logs/export', [AILogController::class, 'export']);
-    Route::delete('/ai/logs/{id}', [AILogController::class, 'destroy']);
-
-    // Context rules routes
-    Route::get('/context-rules', [ContextRuleController::class, 'index']);
-    Route::get('/context-rules/{id}', [ContextRuleController::class, 'show']);
-    Route::post('/context-rules', [ContextRuleController::class, 'store']);
-    Route::put('/context-rules/{id}', [ContextRuleController::class, 'update']);
-    Route::delete('/context-rules/{id}', [ContextRuleController::class, 'destroy']);
-
     // Follow-up configuration routes
     Route::prefix('follow-up')->group(function () {
         Route::get('/configs', [FollowUpController::class, 'index']);
@@ -198,43 +183,98 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/configs/{configId}/questions', [FollowUpController::class, 'addQuestion']);
         Route::put('/questions/{id}', [FollowUpController::class, 'updateQuestion']);
         Route::delete('/questions/{id}', [FollowUpController::class, 'deleteQuestion']);
+        Route::put('/configs/{configId}/questions/reorder', [FollowUpController::class, 'reorderQuestions']);
 
         Route::post('/generate', [FollowUpController::class, 'generateFollowUps']);
         Route::post('/process', [FollowUpController::class, 'processSelectedFollowUp']);
+    });
+    
+    // Widget management routes (authenticated)
+    Route::prefix('widgets')->group(function () {
+        Route::get('/', [WidgetController::class, 'index']);
+        Route::get('/{id}', [WidgetController::class, 'show']);
+        Route::post('/', [WidgetController::class, 'store']);
+        Route::put('/{id}', [WidgetController::class, 'update']);
+        Route::delete('/{id}', [WidgetController::class, 'destroy']);
+        Route::post('/{id}/toggle-status', [WidgetController::class, 'toggleStatus']);
+        Route::get('/{id}/embed-code', [WidgetController::class, 'generateEmbedCode']);
+        Route::post('/{id}/validate-domain', [WidgetController::class, 'validateDomain']);
     });
 });
 
 // AI Provider Routes
 Route::middleware(['auth:sanctum'])->prefix('ai/providers')->name('ai.providers.')->group(function () {
-    Route::get('/', 'Api\AI\AIProviderController@getProviders')->name('all');
-    Route::get('/{providerId}', 'Api\AI\AIProviderController@getProvider')->name('show');
-    Route::post('/{providerId}/configure', 'Api\AI\AIProviderController@configureProvider')->name('configure');
-    Route::post('/{providerId}/test', 'Api\AI\AIProviderController@testProviderConnection')->name('test');
-    Route::post('/{providerId}/status', 'Api\AI\AIProviderController@toggleProviderStatus')->name('status');
-    Route::get('/{providerId}/models', 'Api\AI\AIProviderController@getProviderModels')->name('models');
-    Route::post('/{providerId}/default-model', 'Api\AI\AIProviderController@setDefaultModel')->name('default-model');
+    Route::get('/', [AIProviderController::class, 'getProviders'])->name('all');
+    Route::get('/{providerId}', [AIProviderController::class, 'getProvider'])->name('show');
+    Route::post('/{providerId}/configure', [AIProviderController::class, 'configureProvider'])->name('configure');
+    Route::post('/{providerId}/test', [AIProviderController::class, 'testProviderConnection'])->name('test');
+    Route::post('/{providerId}/status', [AIProviderController::class, 'toggleProviderStatus'])->name('status');
+    Route::get('/{providerId}/models', [AIProviderController::class, 'getProviderModels'])->name('models');
+    Route::post('/{providerId}/default-model', [AIProviderController::class, 'setDefaultModel'])->name('default-model');
 });
 
-// Knowledge Base routes
-Route::middleware(['auth:sanctum'])->prefix('knowledge-base')->group(function () {
-    Route::get('/', [KnowledgeBaseController::class, 'index']);
-    Route::post('/', [KnowledgeBaseController::class, 'store']);
-    Route::get('/{id}', [KnowledgeBaseController::class, 'show']);
-    Route::put('/{id}', [KnowledgeBaseController::class, 'update']);
-    Route::delete('/{id}', [KnowledgeBaseController::class, 'destroy']);
-    Route::get('/{id}/export', [KnowledgeBaseController::class, 'export']);
-    Route::post('/import', [KnowledgeBaseController::class, 'import']);
+/*
+|--------------------------------------------------------------------------
+| Knowledge Base Routes
+|--------------------------------------------------------------------------
+*/
+Route::group(['prefix' => 'knowledge-base', 'middleware' => ['auth:sanctum']], function () {
+    // Existing Knowledge Base routes
+    Route::get('/', 'Api\KnowledgeBase\KnowledgeBaseController@index');
+    Route::post('/', 'Api\KnowledgeBase\KnowledgeBaseController@store');
+    Route::get('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@show');
+    Route::put('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@update');
+    Route::delete('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@destroy');
+    
+    // Knowledge Base entries
+    Route::get('/{id}/entries', 'Api\KnowledgeBase\KnowledgeBaseController@getEntries');
+    Route::post('/{id}/entries', 'Api\KnowledgeBase\KnowledgeBaseController@addEntry');
+    Route::put('/entries/{entryId}', 'Api\KnowledgeBase\KnowledgeBaseController@updateEntry');
+    Route::delete('/entries/{entryId}', 'Api\KnowledgeBase\KnowledgeBaseController@deleteEntry');
+    
+    // Search and knowledge retrieval
+    Route::post('/search', 'Api\KnowledgeBase\KnowledgeBaseController@search');
+    Route::post('/advanced-search', 'Api\KnowledgeBase\KnowledgeBaseController@advancedSearch');
+    
+    // Import/export
+    Route::post('/{id}/export', 'Api\KnowledgeBase\KnowledgeBaseController@export');
+    Route::post('/import', 'Api\KnowledgeBase\KnowledgeBaseController@import');
+    
+    // Vector search and embeddings
+    Route::post('/semantic-search', 'Api\KnowledgeBase\VectorSearchController@semanticSearch');
+    Route::post('/hybrid-search', 'Api\KnowledgeBase\VectorSearchController@hybridSearch');
+    Route::post('/entries/{entryId}/embeddings', 'Api\KnowledgeBase\VectorSearchController@generateEmbeddings');
+    Route::post('/{id}/generate-embeddings', 'Api\KnowledgeBase\VectorSearchController@generateEmbeddingsForKnowledgeBase');
+    Route::post('/entries/{entryId}/chunk', 'Api\KnowledgeBase\VectorSearchController@chunkEntry');
+    Route::post('/{id}/process-chunking', 'Api\KnowledgeBase\VectorSearchController@processKnowledgeBaseChunking');
+    Route::put('/{id}/vector-settings', 'Api\KnowledgeBase\VectorSearchController@updateVectorSearchSettings');
 
-    // Knowledge entries routes
-    Route::get('/{knowledgeBaseId}/entries', [KnowledgeBaseController::class, 'getEntries']);
-    Route::post('/{knowledgeBaseId}/entries', [KnowledgeBaseController::class, 'storeEntry']);
-    Route::post('/{knowledgeBaseId}/entries/bulk', [KnowledgeBaseController::class, 'storeBulkEntries']);
-    Route::post('/{knowledgeBaseId}/generate-embeddings', [KnowledgeBaseController::class, 'generateEmbeddings']);
-    Route::put('/entries/{id}', [KnowledgeBaseController::class, 'updateEntry']);
-    Route::delete('/entries/{id}', [KnowledgeBaseController::class, 'destroyEntry']);
-    Route::post('/entries/bulk-delete', [KnowledgeBaseController::class, 'bulkDestroyEntries']);
+    // Stats and Analytics
+    Route::get('/{id}/stats', 'Api\KnowledgeBase\KnowledgeBaseController@getStats');
+    Route::post('/entries/{entryId}/keyword-highlights', 'Api\KnowledgeBase\KnowledgeBaseController@generateKeywordHighlights');
+});
 
-    // Search routes
-    Route::post('/search', [KnowledgeBaseController::class, 'search']);
-    Route::get('/entries/{entryId}/similar', [KnowledgeBaseController::class, 'findSimilar']);
+// Prompt Templates
+Route::prefix('prompt-templates')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [PromptTemplateController::class, 'index']);
+    Route::get('/{id}', [PromptTemplateController::class, 'show']);
+    Route::post('/', [PromptTemplateController::class, 'store']);
+    Route::put('/{id}', [PromptTemplateController::class, 'update']);
+    Route::delete('/{id}', [PromptTemplateController::class, 'destroy']);
+    Route::post('/preview', [PromptTemplateController::class, 'preview']);
+});
+
+// Public Widget routes (no authentication required)
+Route::prefix('public')->group(function () {
+    // Widget configuration and session management
+    Route::prefix('widgets')->group(function () {
+        Route::get('/{id}/config', [PublicWidgetController::class, 'getConfig']);
+        Route::post('/{id}/sessions', [PublicWidgetController::class, 'createChatSession']);
+    });
+    
+    // Chat functionality for embedded widgets
+    Route::prefix('chat')->group(function () {
+        Route::get('/sessions/{sessionId}/messages', [PublicChatController::class, 'getMessages']);
+        Route::post('/sessions/{sessionId}/messages', [PublicChatController::class, 'sendMessage']);
+    });
 });

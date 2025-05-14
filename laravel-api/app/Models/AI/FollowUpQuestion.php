@@ -44,7 +44,6 @@ class FollowUpQuestion extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'id',
         'config_id',
         'question',
         'display_order',
@@ -63,15 +62,13 @@ class FollowUpQuestion extends Model
     protected $casts = [
         'display_order' => 'integer',
         'is_active' => 'boolean',
-        'priority' => 'string',
-        'display_position' => 'string',
-        'metadata' => 'json',
+        'metadata' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
 
     /**
-     * Get the configuration that owns the follow-up question.
+     * Get the configuration that owns the question.
      */
     public function config(): BelongsTo
     {

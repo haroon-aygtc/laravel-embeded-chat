@@ -15,21 +15,21 @@ import { chatApi } from "./features/chat";
 import { aiApi } from "./features/aifeatures";
 import { knowledgeBaseApi } from "./features/knowledgeBase";
 import { widgetApi } from "./features/widget";
-import { contextRulesApi } from "./features/contextRules";
+import { contextRulesApi } from "./features/contextRulesfeatures";
 import { followUpConfigApi } from "./features/followUpConfig";
-import { followUpQuestionsApi } from "./features/followUpQuestions";
+import { followUpApi } from "./features/followupfeatures";
 import { responseFormattingApi } from "./features/responseFormatting";
-import { scrapingApi } from "./features/scraping";
+import { promptTemplateApi } from "./features/promptTemplatefeatures";
+import { vectorSearchApi } from "./features/vectorSearchFeatures";
 
-// API endpoints
+// Endpoint definitions (for external use if needed)
 import * as endpoints from "./endpoints";
 
-// Export all API-related services and utilities
-export {
-  // Core API utilities
-  api,
+// Export API middleware and utilities
+export { api, endpoints };
 
-  // Feature-specific API services
+// Export feature-specific APIs
+export {
   authApi,
   userApi,
   chatApi,
@@ -38,46 +38,20 @@ export {
   widgetApi,
   contextRulesApi,
   followUpConfigApi,
-  followUpQuestionsApi,
+  followUpApi,
   responseFormattingApi,
-  scrapingApi,
-
-  // API endpoints
-  endpoints,
+  promptTemplateApi,
+  vectorSearchApi
 };
 
-// Re-export types from feature services
+// Export type definitions from features
+export type { RegisterData, LoginCredentials } from "./features/auth";
+export type { ChatMessage } from "./features/chat";
 export type {
-  LoginCredentials,
-  RegisterData,
-  User,
-  AuthResponse,
-} from "./features/auth";
-
+  FollowUpConfig,
+  FollowUpQuestion
+} from "./features/followupfeatures";
 export type {
-  UserProfile,
-  UserActivity,
-  UserQueryParams,
-  UserListResponse,
-} from "./features/user";
-
-export type {
-  ChatSession,
-  ChatMessage,
-  ChatAttachment,
-  SendMessageRequest,
-  CreateSessionRequest,
-} from "./features/chat";
-
-export type {
-  AIModel,
-  GenerateRequest,
-  GenerateResponse,
-  AIInteractionLog,
-  PerformanceMetrics,
-} from "./features/aifeatures";
-
-export type {
-  KnowledgeBaseConfig,
-  KnowledgeBaseQueryRequest,
-} from "./features/knowledgeBase";
+  KnowledgeEntryWithScore,
+  VectorSearchSettings
+} from "./features/vectorSearchFeatures";

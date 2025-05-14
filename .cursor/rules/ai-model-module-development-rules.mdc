@@ -1,0 +1,258 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Comprehensive Overview of AI Modules
+
+This document provides a detailed overview of each AI module, including its purpose, features, admin operations, and interaction with the AI Model. It also outlines how all the modules work together to create a cohesive and effective AI-powered system.
+
+1. Knowledge Base Module
+Objective:
+
+To provide structured, accurate, and up-to-date information for the AI model to retrieve responses from diverse sources.
+
+Individual Module Functionality:
+
+This module serves as a structured repository of information, containing data from various sources like databases, documents, and web links. It allows the system to fetch precise and factual information, ensuring the AI's responses are accurate and consistent.
+
+Key Features:
+
+Data Sources:
+
+Database (structured)
+
+Internal storage (project files)
+
+Knowledge base articles & FAQs
+
+File uploads (PDF, DOCX, XLSX)
+
+Website links (for web scraping)
+
+Dynamic Query Handling: Selects best source or combines sources per query.
+
+Update process: Manual and auto fetch.
+
+Admin Operations:
+
+Manage source types and priorities.
+
+Upload and categorize content.
+
+Create/edit articles or FAQ entries.
+
+Link scraping sources
+
+AI Model Integration:
+
+Queries multiple data sources based on context.
+
+Prioritizes internal knowledge and falls back to AI-generated responses.
+
+Delivers structured data to the AI model.
+
+Interaction with the AI Model:
+
+The Knowledge Base provides the AI Model with the necessary data to answer user queries accurately. When a user asks a question, the system can query the knowledge base, retrieve relevant information, and feed it to the AI Model to generate a response. This ensures that the AI's responses are grounded in fact and consistent with the available information.
+
+2. Context Module
+Objective:
+
+To ensure the AI understands queries based on session history, user behavior, and business-specific context.
+
+Individual Module Functionality:
+
+This module enriches the AI's understanding of user queries by considering the session history, user behavior, and business-specific rules. It enables the AI to provide more relevant and personalized responses, maintaining context throughout the conversation.
+
+Key Features:
+
+User & Session Context:
+
+Tracks preferences, previous queries, and behavior
+
+Maintains ongoing context throughout sessions
+
+Business Context: Rules for hours, policies, and business logic
+
+Fallbacks: Predefined answers for unclear context
+
+Admin Operations:
+
+Define rules for ambiguous queries.
+
+Configure how long session memory is retained.
+
+Control what data is stored (e.g., preferences, past interactions).
+
+AI Model Integration:
+
+Provides session-aware responses.
+
+Dynamically adjusts based on conversation flow.
+
+Offers generic answers if context is insufficient.
+
+Interaction with the AI Model:
+
+The Context Module provides the AI Model with the context of the conversation, including user history, preferences, and current session information. This context allows the AI Model to generate more relevant and personalized responses.
+
+3. Prompt Template Module
+Objective:
+
+To define reusable, dynamic templates that control the structure, tone, and logic of AI responses.
+
+Individual Module Functionality:
+
+This module provides reusable templates that define the structure, tone, and logic of AI-generated responses. It ensures that the AI's output aligns with branding guidelines and meets specific communication goals.
+
+Key Features:
+
+Dynamic placeholders
+
+Contextual instructions
+
+AI modifiers
+
+Priority and fallback management
+
+Template tags
+
+Admin Operations:
+
+Create/edit prompt templates
+
+Set activation, priority, preview, and publishing controls.
+
+AI Model Integration:
+
+Templates are attached to user queries before sending to the AI.
+
+Fallback templates are used when the primary template fails.
+
+Ensures consistency and branding in responses.
+
+Interaction with the AI Model:
+
+Prompt Templates provide the AI Model with instructions on how to format its responses. These templates can include placeholders for dynamic content, formatting guidelines, and tone of voice instructions. This ensures that the AI Model's responses are consistent with branding and communication goals.
+
+4. Follow-up Module
+Objective:
+
+To enrich user engagement by offering dynamic follow-up questions after an initial response.
+
+Individual Module Functionality:
+
+This module enhances user engagement by enabling the system to offer dynamic follow-up questions. It allows for the creation of interactive conversation flows, guiding users and gathering more information.
+
+Key Features:
+
+Conditional follow-up questions
+
+Multi-option answers
+
+Control placement in response
+
+Automatic or manual triggering
+
+Admin Operations:
+
+Configure relevance and logic for follow-up chains
+
+Manage follow-up conditions
+
+AI Model Integration:
+
+Follow-ups are sent based on the previous query/response.
+
+Supports interactive, guided conversations.
+
+Interaction with the AI Model:
+
+The Follow-up Module works in conjunction with the AI Model to create interactive conversation flows. After the AI Model provides an initial response, the system can use the Follow-up Module to present the user with a set of follow-up questions. The user's answers to these questions can then be fed back into the AI Model to generate further responses, creating a dynamic and engaging conversation.
+
+5. Branding Module
+Objective:
+
+Ensure AI responses are consistent with the Al Yalayis brand.
+
+Individual Module Functionality:
+
+This module ensures that all AI-generated responses are consistent with the Al Yalayis brand. It allows the admin to configure branding elements such as logos, colors, and fonts, ensuring a uniform visual identity across all interactions.
+
+Key Features:
+
+Consistent branding (logos, colors, fonts).
+
+Branding across all response formats and channels.
+
+Admin Operations:
+
+Set Branding Style: Admin selects branding elements like logos, colors, and fonts for AI responses.
+
+Apply Branding to Responses: Admin configures when and where the branding should appear .
+
+Preview Branding: Admin can preview the response with the branding applied.
+
+Activate/Deactivate Branding: Admin can enable or disable branding.
+
+AI Model Integration:
+
+The system applies branding elements to the AI-generated response before delivery.
+
+Interaction with the AI Model:
+
+The Branding Module works in conjunction with the AI Model by applying the configured branding to the AI-generated response before it is delivered to the user. This ensures that all responses adhere to the brand guidelines and contain the necessary visual elements.
+
+6. Response Format Module
+Objective:
+
+Control the structure, tone, and style of AI responses.
+
+Individual Module Functionality:
+
+This module enables the admin to control the structure, tone, and style of AI-generated responses. It allows for defining how the response will be structured, setting the tone, and specifying the response length.
+
+Key Features:
+
+Admin-defined response structure
+
+Tone and length control
+
+Dynamic formatting
+
+Customizable formatting
+
+Admin Operations:
+
+Set Response Structure
+
+Set Tone & Length
+
+Preview Response
+
+Activate/Deactivate Format Options
+
+AI Model Integration:
+
+The system formats the AI-generated response according to admin-defined rules.
+
+Interaction with the AI Model:
+
+The Response Format Module works with the AI Model by providing the formatting instructions. The AI model generates the response, and then the system formats it according to the admin's configuration, including structure, tone, and length.
+
+Module Interaction Summary
+Knowledge Base + Context: Ensures relevant data is pulled based on query history and user behavior.
+
+Context + Prompt Templates: Adjusts tone, content, and specificity using history and user profile.
+
+Prompt Templates + AI: Defines structured, consistent, branded replies.
+
+Follow-up + Context: Enables dynamic question trees tailored to conversation flow.
+
+Branding + AI: Ensures all AI-generated responses adhere to brand guidelines.
+
+Response Format + AI: Controls the structure, tone, and style of AI responses.
+
+
+This modular approach enables intelligent, flexible, and scalable AI-powered interactions, where each module plays a specific role in enhancing the AI Model's ability to provide accurate, relevant, and engaging responses.

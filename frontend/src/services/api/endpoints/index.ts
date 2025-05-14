@@ -14,18 +14,20 @@ export * from "./chatEndpoints";
 
 // AI and context management
 export * from "./aiEndpoints";
+export * from "./aiProviderEndpoints";
 export * from "./contextRuleEndpoints";
 export * from "./promptTemplateEndpoints";
 
 // Knowledge base
 export * from "./knowledgeBaseEndpoints";
+export * from "./vectorSearchEndpoints";
 
 // Widget and embedding
 export * from "./widgetEndpoints";
 
 // Follow-up and response formatting
 export * from "./followUpConfigEndpoints";
-export * from "./followUpQuestionEndpoints";
+export * from "./followUpEndpoints";
 export * from "./responseFormattingEndpoints";
 
 // Scraping and data collection

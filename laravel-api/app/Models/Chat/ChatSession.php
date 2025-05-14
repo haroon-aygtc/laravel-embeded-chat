@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models\Chat;
 
 use App\Models\User;
+use App\Models\Widget;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -52,6 +53,8 @@ class ChatSession extends Model
         'context_rule_id',
         'context_name',
         'context_mode',
+        'widget_id',
+        'is_active',
     ];
 
     /**
@@ -62,6 +65,7 @@ class ChatSession extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'is_active' => 'boolean',
     ];
 
     /**
@@ -70,6 +74,14 @@ class ChatSession extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the widget associated with the chat session.
+     */
+    public function widget(): BelongsTo
+    {
+        return $this->belongsTo(Widget::class);
     }
 
     /**

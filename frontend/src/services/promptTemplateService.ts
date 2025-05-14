@@ -1,198 +1,174 @@
+"use client";
+
 import logger from "@/utils/logger";
-import { api } from "./api/middleware/apiMiddleware";
-import { promptTemplateEndpoints } from "./api/endpoints/promptTemplateEndpoints";
+import { promptTemplateApi, PromptTemplate, PreviewTemplateRequest, PreviewTemplateResponse } from "./api/features/promptTemplatefeatures";
 
-export interface PromptTemplate {
-  id: string;
-  name: string;
-  description?: string;
-  template: string;
-  category?: string;
-  variables?: string[];
-  isDefault?: boolean;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+// Re-export the types from the features layer
+export type { PromptTemplate, PreviewTemplateRequest, PreviewTemplateResponse };
 
-const promptTemplateService = {
+class PromptTemplateService {
   /**
    * Get all prompt templates
    */
-  getAllTemplates: async (): Promise<PromptTemplate[]> => {
+  async getAllTemplates(): Promise<PromptTemplate[]> {
     try {
-      const response = await api.get<PromptTemplate[]>(promptTemplateEndpoints.templates);
-
+      const response = await promptTemplateApi.getAllTemplates();
+      
       if (!response.success) {
-        throw new Error(
-          response.error?.message || "Failed to fetch prompt templates",
-        );
+        throw new Error(response.error?.message || "Failed to fetch prompt templates");
       }
-
+      
       return response.data || [];
     } catch (error) {
-      logger.error("Error fetching prompt templates:", error);
-      throw new Error(`Failed to fetch prompt templates: ${error.message}`);
+      logger.error('Error fetching prompt templates:', error);
+      throw error;
     }
-  },
+  }
 
   /**
    * Get a prompt template by ID
    */
-  getTemplateById: async (id: string): Promise<PromptTemplate | null> => {
+  async getTemplate(id: string): Promise<PromptTemplate> {
     try {
-      const response = await api.get<PromptTemplate>(promptTemplateEndpoints.templateById(id));
-
-      if (!response.success) {
-        if (response.error?.code === "ERR_404") {
-          return null;
-        }
-        throw new Error(
-          response.error?.message || "Failed to fetch prompt template",
-        );
+      const response = await promptTemplateApi.getTemplateById(id);
+      
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || `Failed to fetch prompt template with ID ${id}`);
       }
-
-      return response.data || null;
+      
+      return response.data;
     } catch (error) {
       logger.error(`Error fetching prompt template ${id}:`, error);
-      throw new Error(`Failed to fetch prompt template: ${error.message}`);
+      throw error;
     }
-  },
+  }
 
   /**
    * Create a new prompt template
    */
-  createTemplate: async (
-    template: Omit<PromptTemplate, "id" | "createdAt" | "updatedAt">,
-  ): Promise<PromptTemplate> => {
+  async createTemplate(data: Omit<PromptTemplate, 'id' | 'created_at' | 'updated_at'>): Promise<PromptTemplate> {
     try {
-      const response = await api.post<PromptTemplate>(
-        promptTemplateEndpoints.templates,
-        template,
-      );
-
+      const response = await promptTemplateApi.createTemplate(data);
+      
       if (!response.success || !response.data) {
-        throw new Error(
-          response.error?.message || "Failed to create prompt template",
-        );
+        throw new Error(response.error?.message || "Failed to create prompt template");
       }
-
+      
       return response.data;
     } catch (error) {
-      logger.error("Error creating prompt template:", error);
-      throw new Error(`Failed to create prompt template: ${error.message}`);
+      logger.error('Error creating prompt template:', error);
+      throw error;
     }
-  },
+  }
 
   /**
    * Update a prompt template
    */
-  updateTemplate: async (
-    id: string,
-    template: Partial<PromptTemplate>,
-  ): Promise<PromptTemplate> => {
+  async updateTemplate(id: string, data: Partial<Omit<PromptTemplate, 'id' | 'created_at' | 'updated_at'>>): Promise<PromptTemplate> {
     try {
-      const response = await api.put<PromptTemplate>(
-        promptTemplateEndpoints.templateById(id),
-        template,
-      );
-
+      const response = await promptTemplateApi.updateTemplate(id, data);
+      
       if (!response.success || !response.data) {
-        throw new Error(
-          response.error?.message || "Failed to update prompt template",
-        );
+        throw new Error(response.error?.message || `Failed to update prompt template with ID ${id}`);
       }
-
+      
       return response.data;
     } catch (error) {
       logger.error(`Error updating prompt template ${id}:`, error);
-      throw new Error(`Failed to update prompt template: ${error.message}`);
+      throw error;
     }
-  },
+  }
 
   /**
    * Delete a prompt template
    */
-  deleteTemplate: async (id: string): Promise<boolean> => {
+  async deleteTemplate(id: string): Promise<void> {
     try {
-      const response = await api.delete<boolean>(promptTemplateEndpoints.templateById(id));
-
+      const response = await promptTemplateApi.deleteTemplate(id);
+      
       if (!response.success) {
-        throw new Error(
-          response.error?.message || "Failed to delete prompt template",
-        );
+        throw new Error(response.error?.message || `Failed to delete prompt template with ID ${id}`);
       }
-
-      return true;
     } catch (error) {
       logger.error(`Error deleting prompt template ${id}:`, error);
-      throw new Error(`Failed to delete prompt template: ${error.message}`);
+      throw error;
     }
-  },
+  }
 
   /**
    * Get templates by user ID
    */
-  getUserTemplates: async (userId: string): Promise<PromptTemplate[]> => {
+  async getUserTemplates(userId: string): Promise<PromptTemplate[]> {
     try {
-      const response = await api.get<PromptTemplate[]>(promptTemplateEndpoints.userTemplates(userId));
-
+      const response = await promptTemplateApi.getUserTemplates(userId);
+      
       if (!response.success) {
-        throw new Error(
-          response.error?.message || "Failed to fetch user prompt templates",
-        );
+        throw new Error(response.error?.message || `Failed to fetch user templates for ${userId}`);
       }
-
+      
       return response.data || [];
     } catch (error) {
       logger.error(`Error fetching user templates for ${userId}:`, error);
-      throw new Error(`Failed to fetch user templates: ${error.message}`);
+      throw error;
     }
-  },
+  }
 
   /**
    * Get template categories
    */
-  getCategories: async (): Promise<string[]> => {
+  async getCategories(): Promise<string[]> {
     try {
-      const response = await api.get<string[]>(promptTemplateEndpoints.categories);
-
+      const response = await promptTemplateApi.getCategories();
+      
       if (!response.success) {
-        throw new Error(
-          response.error?.message || "Failed to fetch template categories",
-        );
+        throw new Error(response.error?.message || "Failed to fetch template categories");
       }
-
+      
       return response.data || [];
     } catch (error) {
-      logger.error("Error fetching template categories:", error);
-      throw new Error(`Failed to fetch template categories: ${error.message}`);
+      logger.error('Error fetching template categories:', error);
+      throw error;
     }
-  },
+  }
 
   /**
    * Test a prompt template with variables
    */
-  testTemplate: async (id: string, variables: Record<string, string>): Promise<string> => {
+  async testTemplate(id: string, variables: Record<string, string>): Promise<string> {
     try {
-      const response = await api.post<{ result: string }>(
-        promptTemplateEndpoints.testTemplate(id),
-        { variables }
-      );
-
+      const response = await promptTemplateApi.testTemplate(id, variables);
+      
       if (!response.success || !response.data) {
-        throw new Error(
-          response.error?.message || "Failed to test prompt template",
-        );
+        throw new Error(response.error?.message || `Failed to test prompt template ${id}`);
       }
-
+      
       return response.data.result;
     } catch (error) {
       logger.error(`Error testing prompt template ${id}:`, error);
-      throw new Error(`Failed to test prompt template: ${error.message}`);
+      throw error;
     }
-  },
-};
+  }
+
+  /**
+   * Preview a template with sample variables
+   */
+  async previewTemplate(data: PreviewTemplateRequest): Promise<PreviewTemplateResponse> {
+    try {
+      const response = await promptTemplateApi.previewTemplate(data);
+      
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || "Failed to preview template");
+      }
+      
+      return response.data;
+    } catch (error) {
+      logger.error('Error previewing template:', error);
+      throw error;
+    }
+  }
+}
+
+// Export a singleton instance
+export const promptTemplateService = new PromptTemplateService();
 
 export default promptTemplateService;
-export { promptTemplateService };

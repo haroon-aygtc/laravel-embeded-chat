@@ -9,7 +9,7 @@ import {
   AIModelRequest,
   AIModelResponse,
 } from "../types";
-import env from "@/config/env";
+import {env} from "@/config/env";
 
 export class GeminiModel extends BaseAIModel {
   constructor(modelName: string = AIModelId.GEMINI_PRO) {

@@ -158,27 +158,27 @@ export const knowledgeBaseCoreApi = {
     /**
      * Delete multiple entries
      */
-    bulkDeleteEntries: async (params: BulkDeleteEntriesParams): Promise<{ message: string; deleted_count: number }> => {
-        const response = await api.post(knowledgeBaseEndpoints.bulkDeleteEntries, params);
+    bulkDeleteEntries: async (
+        entryIds: string[]
+    ): Promise<{ message: string; deleted_count: number }> => {
+        const response = await api.post(knowledgeBaseEndpoints.bulkDeleteEntries, { entry_ids: entryIds });
         return response.data;
     },
 
     /**
      * Generate embeddings for all entries in a knowledge base
      */
-    generateEmbeddings: async (
-        knowledgeBaseId: string
-    ): Promise<{ message: string; processed_entries: number }> => {
+    generateEmbeddings: async (knowledgeBaseId: string): Promise<{ message: string; processed_entries: number; failed_entries: number }> => {
         const response = await api.post(knowledgeBaseEndpoints.generateEmbeddings(knowledgeBaseId));
         return response.data;
     },
 
     /**
-     * Find entries similar to a specific entry
+     * Find similar entries using vector similarity when available
      */
     findSimilar: async (
         entryId: string,
-        params: FindSimilarParams
+        params?: FindSimilarParams
     ): Promise<KnowledgeEntry[]> => {
         const response = await api.get(knowledgeBaseEndpoints.findSimilar(entryId), { params });
         return response.data;
@@ -243,15 +243,15 @@ export async function deleteEntry(id: string): Promise<{ message: string }> {
     return knowledgeBaseCoreApi.deleteEntry(id);
 }
 
-export async function bulkDeleteEntries(params: BulkDeleteEntriesParams): Promise<{ message: string; deleted_count: number }> {
-    return knowledgeBaseCoreApi.bulkDeleteEntries(params);
+export async function bulkDeleteEntries(entryIds: string[]): Promise<{ message: string; deleted_count: number }> {
+    return knowledgeBaseCoreApi.bulkDeleteEntries(entryIds);
 }
 
-export async function generateEmbeddings(knowledgeBaseId: string): Promise<{ message: string; processed_entries: number }> {
+export async function generateEmbeddings(knowledgeBaseId: string): Promise<{ message: string; processed_entries: number; failed_entries: number }> {
     return knowledgeBaseCoreApi.generateEmbeddings(knowledgeBaseId);
 }
 
-export async function findSimilar(entryId: string, params: FindSimilarParams): Promise<KnowledgeEntry[]> {
+export async function findSimilar(entryId: string, params?: FindSimilarParams): Promise<KnowledgeEntry[]> {
     return knowledgeBaseCoreApi.findSimilar(entryId, params);
 }
 

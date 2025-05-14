@@ -1,4 +1,3 @@
-import { getMySQLClient } from "./mysqlClient";
 import logger from "@/utils/logger";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";

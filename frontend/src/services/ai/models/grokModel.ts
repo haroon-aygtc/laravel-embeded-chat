@@ -9,7 +9,7 @@ import {
   AIModelRequest,
   AIModelResponse,
 } from "../types";
-import env from "@/config/env";
+import {env} from "@/config/env";
 import axios from "axios";
 
 export class GrokModel extends BaseAIModel {

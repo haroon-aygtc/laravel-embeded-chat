@@ -5,9 +5,11 @@
  */
 
 import { api, ApiResponse } from "../middleware/apiMiddleware";
+import { followUpEndpoints } from "../endpoints/followUpEndpoints";
 
 export interface FollowUpQuestion {
     id: string;
+    config_id: string;
     question: string;
     display_order: number;
     is_active: boolean;
@@ -33,6 +35,34 @@ export interface FollowUpConfig {
     created_at?: string;
     updated_at?: string;
     questions?: FollowUpQuestion[];
+}
+
+// Alternative interface format used in some services
+export interface FollowUpConfigData {
+  id?: string;
+  userId: string;
+  name: string;
+  enableFollowUpQuestions: boolean;
+  maxFollowUpQuestions: number;
+  showFollowUpAs: "buttons" | "chips" | "list";
+  generateAutomatically: boolean;
+  isDefault?: boolean;
+  predefinedQuestionSets?: PredefinedQuestionSetData[];
+  topicBasedQuestionSets?: TopicBasedQuestionSetData[];
+}
+
+export interface PredefinedQuestionSetData {
+  id?: string;
+  name: string;
+  description?: string;
+  triggerKeywords?: string[];
+  questions: string[];
+}
+
+export interface TopicBasedQuestionSetData {
+  id?: string;
+  topic: string;
+  questions: string[];
 }
 
 export interface GenerateFollowUpsRequest {
@@ -69,76 +99,83 @@ export const followUpApi = {
      */
     getConfigs: async (userId?: number): Promise<ApiResponse<FollowUpConfig[]>> => {
         const params = userId ? { user_id: userId } : {};
-        return api.get("/follow-up/configs", { params });
+        return api.get(followUpEndpoints.configs, { params });
     },
 
     /**
      * Get a specific follow-up configuration
      */
     getConfig: async (id: string): Promise<ApiResponse<FollowUpConfig>> => {
-        return api.get(`/follow-up/configs/${id}`);
+        return api.get(followUpEndpoints.config(id));
     },
 
     /**
      * Create a new follow-up configuration
      */
     createConfig: async (config: Partial<FollowUpConfig>): Promise<ApiResponse<FollowUpConfig>> => {
-        return api.post("/follow-up/configs", config);
+        return api.post(followUpEndpoints.configs, config);
     },
 
     /**
      * Update a follow-up configuration
      */
     updateConfig: async (id: string, config: Partial<FollowUpConfig>): Promise<ApiResponse<FollowUpConfig>> => {
-        return api.put(`/follow-up/configs/${id}`, config);
+        return api.put(followUpEndpoints.config(id), config);
     },
 
     /**
      * Delete a follow-up configuration
      */
     deleteConfig: async (id: string): Promise<ApiResponse<{ message: string }>> => {
-        return api.delete(`/follow-up/configs/${id}`);
+        return api.delete(followUpEndpoints.config(id));
     },
 
     /**
      * Get questions for a specific configuration
      */
     getQuestions: async (configId: string): Promise<ApiResponse<FollowUpQuestion[]>> => {
-        return api.get(`/follow-up/configs/${configId}/questions`);
+        return api.get(followUpEndpoints.questions(configId));
     },
 
     /**
      * Add a question to a configuration
      */
     addQuestion: async (configId: string, question: Partial<FollowUpQuestion>): Promise<ApiResponse<FollowUpQuestion>> => {
-        return api.post(`/follow-up/configs/${configId}/questions`, question);
+        return api.post(followUpEndpoints.questions(configId), question);
     },
 
     /**
      * Update a question
      */
     updateQuestion: async (id: string, question: Partial<FollowUpQuestion>): Promise<ApiResponse<FollowUpQuestion>> => {
-        return api.put(`/follow-up/questions/${id}`, question);
+        return api.put(followUpEndpoints.question(id), question);
     },
 
     /**
      * Delete a question
      */
     deleteQuestion: async (id: string): Promise<ApiResponse<{ message: string }>> => {
-        return api.delete(`/follow-up/questions/${id}`);
+        return api.delete(followUpEndpoints.question(id));
+    },
+
+    /**
+     * Reorder questions in a configuration
+     */
+    reorderQuestions: async (configId: string, questionIds: string[]): Promise<ApiResponse<{ message: string }>> => {
+        return api.put(followUpEndpoints.reorderQuestions(configId), { question_ids: questionIds });
     },
 
     /**
      * Generate follow-up questions based on conversation context
      */
     generateFollowUps: async (request: GenerateFollowUpsRequest): Promise<ApiResponse<GenerateFollowUpsResponse>> => {
-        return api.post("/follow-up/generate", request);
+        return api.post(followUpEndpoints.generate, request);
     },
 
     /**
      * Process a selected follow-up question
      */
     processFollowUp: async (request: ProcessFollowUpRequest): Promise<ApiResponse<ProcessFollowUpResponse>> => {
-        return api.post("/follow-up/process", request);
+        return api.post(followUpEndpoints.process, request);
     },
 }; 

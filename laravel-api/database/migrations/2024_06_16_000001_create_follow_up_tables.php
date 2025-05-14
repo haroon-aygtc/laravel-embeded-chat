@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('name');
             $table->boolean('enable_follow_up_questions')->default(true);
             $table->integer('max_follow_up_questions')->default(3);
-            $table->string('show_follow_up_as')->default('buttons');
+            $table->string('show_follow_up_as')->default('buttons'); // buttons, chips, dropdown, list
             $table->boolean('generate_automatically')->default(true);
             $table->boolean('is_default')->default(false);
             $table->json('predefined_question_sets')->nullable();
@@ -28,6 +28,10 @@ return new class extends Migration
         Schema::create('follow_up_questions', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->uuid('config_id');
+            $table->foreign('config_id')
+                ->references('id')
+                ->on('follow_up_configs')
+                ->onDelete('cascade');
             $table->text('question');
             $table->integer('display_order')->default(0);
             $table->boolean('is_active')->default(true);
@@ -36,11 +40,6 @@ return new class extends Migration
             $table->string('category')->nullable();
             $table->json('metadata')->nullable();
             $table->timestamps();
-
-            $table->foreign('config_id')
-                  ->references('id')
-                  ->on('follow_up_configs')
-                  ->onDelete('cascade');
         });
     }
 

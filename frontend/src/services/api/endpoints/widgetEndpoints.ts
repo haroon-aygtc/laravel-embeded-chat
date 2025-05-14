@@ -4,26 +4,20 @@
  * Defines the API endpoints for widget operations
  */
 
-export const widgetEndpoints = {
-  // Widget management
-  widgets: "/widgets",
-  widgetById: (id: string) => `/widgets/${id}`,
-  userWidgets: (userId: string) => `/widgets/user/${userId}`,
+import { API_BASE_URL } from '@/config/api';
 
-  // Widget configuration
-  settings: (id: string) => `/widgets/${id}/settings`,
-  appearance: (id: string) => `/widgets/${id}/appearance`,
-  behavior: (id: string) => `/widgets/${id}/behavior`,
-
-  // Integration
-  embedCode: (id: string) => `/widgets/${id}/embed-code`,
-  domains: (id: string) => `/widgets/${id}/domains`,
-
-  // Analytics
-  analytics: (id: string) => `/widgets/${id}/analytics`,
-  usage: (id: string) => `/widgets/${id}/usage`,
-
-  // Status management
-  activate: (id: string) => `/widgets/${id}/activate`,
-  deactivate: (id: string) => `/widgets/${id}/deactivate`,
+export const WIDGET_ENDPOINTS = {
+  // Admin/Authenticated endpoints
+  getAllWidgets: `${API_BASE_URL}/widgets`,
+  getWidget: (id: string) => `${API_BASE_URL}/widgets/${id}`,
+  createWidget: `${API_BASE_URL}/widgets`,
+  updateWidget: (id: string) => `${API_BASE_URL}/widgets/${id}`,
+  deleteWidget: (id: string) => `${API_BASE_URL}/widgets/${id}`,
+  toggleWidgetStatus: (id: string) => `${API_BASE_URL}/widgets/${id}/toggle-status`,
+  generateEmbedCode: (id: string) => `${API_BASE_URL}/widgets/${id}/embed-code`,
+  validateDomain: (id: string) => `${API_BASE_URL}/widgets/${id}/validate-domain`,
+  
+  // Public endpoints
+  publicWidgetConfig: (id: string) => `${API_BASE_URL}/public/widgets/${id}/config`,
+  createPublicChatSession: (id: string) => `${API_BASE_URL}/public/widgets/${id}/sessions`,
 };

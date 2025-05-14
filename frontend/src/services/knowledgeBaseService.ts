@@ -13,9 +13,12 @@ import type {
   GetEntriesParams,
   ImportData,
   ImportOptions,
-  FindSimilarParams
+  FindSimilarParams,
+  KnowledgeBaseConfig,
+  KnowledgeBaseForContextRule
 } from "../types/knowledgeBase";
 import { knowledgeBaseCoreApi } from "./api/features/knowledgebase/knowledgebasefeatures";
+import api from './axiosConfig';
 
 // Constants for knowledge base configuration
 export const KNOWLEDGE_BASE_CONSTANTS = {
@@ -207,19 +210,17 @@ class KnowledgeBaseService {
   }
 
   /**
-   * Delete multiple entries in a single operation
+   * Delete entries in bulk
+   * @param entryIds Array of entry IDs to delete
    */
   async bulkDeleteEntries(entryIds: string[]): Promise<{ message: string; deleted_count: number }> {
     try {
-      const response = await knowledgeBaseCoreApi.bulkDeleteEntries({ entry_ids: entryIds });
-
-      // Since we don't know which knowledge bases the entries belonged to,
-      // we can't specifically clear their caches. Instead, we'll clear all entry caches.
-      this.clearCacheByPrefix("entries-");
-
-      return response;
+      // Clear caches that might contain these entries
+      this.clearCache();
+      
+      return await knowledgeBaseCoreApi.bulkDeleteEntries(entryIds);
     } catch (error) {
-      console.error(`Error bulk deleting entries:`, error);
+      console.error('Error deleting entries in bulk:', error);
       throw error;
     }
   }
@@ -261,38 +262,42 @@ class KnowledgeBaseService {
   }
 
   /**
-   * Generate embeddings for all entries in a knowledge base
+   * Find similar entries to a specific entry
+   * @param entryId The ID of the entry to find similar entries for
+   * @param params Parameters for finding similar entries
    */
-  async generateEmbeddings(knowledgeBaseId: string): Promise<{ message: string; processed_entries: number }> {
+  async findSimilarEntries(entryId: string, params?: FindSimilarParams): Promise<KnowledgeEntry[]> {
     try {
-      return await knowledgeBaseCoreApi.generateEmbeddings(knowledgeBaseId);
+      const defaultParams: FindSimilarParams = {
+        limit: KNOWLEDGE_BASE_CONSTANTS.DEFAULT_SIMILAR_ENTRIES_LIMIT,
+        min_similarity_score: 0.6,
+        use_vectors: true,
+      };
+
+      const mergedParams = { ...defaultParams, ...params };
+      
+      return await knowledgeBaseCoreApi.findSimilar(entryId, mergedParams);
     } catch (error) {
-      console.error(`Error generating embeddings for knowledge base with ID ${knowledgeBaseId}:`, error);
+      console.error(`Error finding similar entries for entry ${entryId}:`, error);
       throw error;
     }
   }
 
   /**
-   * Find entries similar to a specific entry
+   * Generate embeddings for all entries in a knowledge base
+   * This process may take time depending on the number of entries
+   * @param knowledgeBaseId The ID of the knowledge base
    */
-  async findSimilar(
-    entryId: string,
-    params?: FindSimilarParams
-  ): Promise<KnowledgeEntry[]> {
+  async generateEmbeddings(knowledgeBaseId: string): Promise<{ message: string; processed_entries: number; failed_entries: number }> {
     try {
-      const cacheKey = this.buildCacheKey(`similar-entries-${entryId}`, params);
-      const cachedData = this.getFromCache(cacheKey);
-      if (cachedData) return cachedData as KnowledgeEntry[];
-
-      const similarEntries = await knowledgeBaseCoreApi.findSimilar(entryId, {
-        limit: params?.limit || KNOWLEDGE_BASE_CONSTANTS.DEFAULT_SIMILAR_ENTRIES_LIMIT,
-        min_similarity_score: params?.min_similarity_score || 0.7,
-      });
-
-      this.addToCache(cacheKey, similarEntries);
-      return similarEntries;
+      // Clear cache for this knowledge base
+      this.clearKnowledgeBaseCache(knowledgeBaseId);
+      
+      const result = await knowledgeBaseCoreApi.generateEmbeddings(knowledgeBaseId);
+      
+      return result;
     } catch (error) {
-      console.error(`Error finding similar entries for entry ID ${entryId}:`, error);
+      console.error(`Error generating embeddings for knowledge base ${knowledgeBaseId}:`, error);
       throw error;
     }
   }
@@ -385,6 +390,238 @@ class KnowledgeBaseService {
       .join('&');
 
     return paramString ? `${baseKey}?${paramString}` : baseKey;
+  }
+
+  /**
+   * Clear cache related to a specific knowledge base
+   * @param knowledgeBaseId The ID of the knowledge base
+   */
+  private clearKnowledgeBaseCache(knowledgeBaseId: string): void {
+    // Remove cache entries that contain this knowledge base ID
+    for (const [key] of this.cache.entries()) {
+      if (key.includes(knowledgeBaseId)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Get knowledge base configurations formatted for context rules
+   */
+  async getKnowledgeBaseConfigsForRules(): Promise<KnowledgeBaseForContextRule[]> {
+    try {
+      // Fetch all knowledge bases
+      const result = await this.getAllKnowledgeBases({ per_page: 100 });
+      
+      // Handle both paginated and array responses
+      let knowledgeBases: KnowledgeBase[];
+      if ('data' in result && Array.isArray(result.data)) {
+        knowledgeBases = result.data;
+      } else if (Array.isArray(result)) {
+        knowledgeBases = result;
+      } else {
+        knowledgeBases = [];
+      }
+      
+      // Map to format needed for context rules
+      return knowledgeBases.map(kb => ({
+        id: kb.id,
+        name: kb.name,
+        description: kb.description || '',
+        source_type: kb.source_type || 'manual',
+        is_active: kb.is_active || true,
+        is_public: kb.is_public || false,
+        entries_count: kb.entries_count || 0,
+        is_used: false // Default to false, will be updated when linked to a rule
+      }));
+    } catch (error) {
+      console.error('Error fetching knowledge base configs for rules:', error);
+      // Return empty array instead of throwing error to avoid breaking the UI
+      return [];
+    }
+  }
+
+  /**
+   * Search knowledge bases for context to use in AI prompts
+   * @param query User query to search with
+   * @param knowledgeBaseIds Optional list of knowledge base IDs to search within
+   * @param limit Maximum number of results to return
+   * @returns Formatted context prompt for AI
+   */
+  async searchForAIContext(
+    query: string,
+    knowledgeBaseIds?: string[],
+    limit = 3
+  ): Promise<string> {
+    try {
+      // Search for relevant entries using the search API
+      const searchResults = await this.search(query, {
+        knowledgeBaseIds,
+        maxResults: limit,
+        // Don't filter by type to get comprehensive results
+      });
+      
+      if (!searchResults || searchResults.length === 0) {
+        return "";
+      }
+      
+      // Format results into a context prompt for the AI
+      let contextPrompt = "I am providing you with some relevant information from my knowledge base. Please use this information to help answer the user's question if applicable:\n\n";
+      
+      searchResults.forEach((entry, index) => {
+        contextPrompt += `--- Information #${index + 1} from ${entry.knowledge_base?.name || 'Knowledge Base'} ---\n`;
+        contextPrompt += `Title: ${entry.title || 'Untitled'}\n`;
+        contextPrompt += `Content: ${entry.content}\n`;
+        
+        if (entry.source_url) {
+          contextPrompt += `Source: ${entry.source_url}\n`;
+        }
+        
+        contextPrompt += "\n";
+      });
+      
+      contextPrompt += "When answering the user's question, incorporate the relevant information from above without explicitly mentioning that you're using a knowledge base unless specifically asked about your sources.\n";
+      
+      return contextPrompt;
+    } catch (error) {
+      console.error("Error searching knowledge base for AI context:", error);
+      return "";
+    }
+  }
+
+  /**
+   * Get all knowledge base configurations
+   */
+  async getAllConfigs(page = 1, perPage = 15, sortBy = 'created_at', sortDirection = 'desc'): Promise<KnowledgeBaseConfig[]> {
+    try {
+      // Use the getAllKnowledgeBases method which already uses knowledgeBaseCoreApi
+      const params: GetKnowledgeBasesParams = {
+        page,
+        per_page: perPage,
+        sort_by: sortBy as any,
+        sort_direction: sortDirection as any
+      };
+      
+      const results = await this.getAllKnowledgeBases(params);
+      
+      // Convert to KnowledgeBaseConfig format
+      if (Array.isArray(results)) {
+        return results.map(kb => this.toConfigFormat(kb));
+      } else if (results && 'data' in results) {
+        return results.data.map(kb => this.toConfigFormat(kb));
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error fetching knowledge bases:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a knowledge base configuration by ID
+   */
+  async getConfig(id: string): Promise<KnowledgeBaseConfig> {
+    try {
+      // Use the getKnowledgeBase method which already uses knowledgeBaseCoreApi
+      const kb = await this.getKnowledgeBase(id);
+      return this.toConfigFormat(kb);
+    } catch (error) {
+      console.error(`Error fetching knowledge base ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new knowledge base configuration
+   */
+  async createConfig(data: Partial<KnowledgeBaseConfig>): Promise<KnowledgeBaseConfig> {
+    try {
+      // Use the createKnowledgeBase method which already uses knowledgeBaseCoreApi
+      const params: CreateKnowledgeBaseParams = {
+        name: data.name || '',
+        description: data.description,
+        source_type: data.source_type as any,
+        is_public: data.is_public,
+        is_active: data.is_active,
+        metadata: data.metadata
+      };
+      
+      const kb = await this.createKnowledgeBase(params);
+      return this.toConfigFormat(kb);
+    } catch (error) {
+      console.error('Error creating knowledge base:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a knowledge base configuration
+   */
+  async updateConfig(id: string, data: Partial<KnowledgeBaseConfig>): Promise<KnowledgeBaseConfig> {
+    try {
+      // Use the updateKnowledgeBase method which already uses knowledgeBaseCoreApi
+      const params: UpdateKnowledgeBaseParams = {
+        name: data.name,
+        description: data.description,
+        source_type: data.source_type as any,
+        is_public: data.is_public,
+        is_active: data.is_active,
+        metadata: data.metadata
+      };
+      
+      const kb = await this.updateKnowledgeBase(id, params);
+      return this.toConfigFormat(kb);
+    } catch (error) {
+      console.error(`Error updating knowledge base ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a knowledge base configuration
+   */
+  async deleteConfig(id: string): Promise<void> {
+    try {
+      // Use the deleteKnowledgeBase method which already uses knowledgeBaseCoreApi
+      await this.deleteKnowledgeBase(id);
+    } catch (error) {
+      console.error(`Error deleting knowledge base ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search across knowledge bases
+   */
+  async searchKnowledge(query: string, knowledgeBaseIds?: string[]): Promise<KnowledgeEntry[]> {
+    try {
+      // Use the search method which already uses knowledgeBaseCoreApi
+      return await this.search(query, { knowledgeBaseIds });
+    } catch (error) {
+      console.error('Error searching knowledge bases:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Helper method to convert KnowledgeBase to KnowledgeBaseConfig format
+   */
+  private toConfigFormat(kb: KnowledgeBase): KnowledgeBaseConfig {
+    return {
+      id: kb.id,
+      name: kb.name,
+      description: kb.description || '',
+      source_type: kb.source_type as any,
+      is_active: kb.is_active,
+      is_public: kb.is_public,
+      entries_count: kb.entries_count || 0,
+      metadata: kb.metadata,
+      user_id: kb.user_id?.toString(),
+      created_at: kb.created_at,
+      updated_at: kb.updated_at,
+      is_used: false
+    };
   }
 }
 

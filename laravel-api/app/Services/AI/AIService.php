@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Models\KnowledgeBase;
 use App\Models\KnowledgeEntry;
+use App\Services\KnowledgeBase\VectorSearch\VectorSearchService;
 
 class AIService
 {
@@ -826,20 +827,168 @@ class AIService
     }
 
     /**
-     * Process the model request based on provider
+     * Process the model request based on provider with fallback
      */
     private function processModelRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
     {
-        switch ($model->provider) {
-            case 'openai':
-                return $this->processOpenAIRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
-            case 'anthropic':
-                return $this->processAnthropicRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
-            case 'google':
-                return $this->processGoogleRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
-            default:
-                throw new \Exception("Unsupported AI provider: {$model->provider}");
+        // Get fallback models in case the primary model fails
+        $fallbackModels = $this->getFallbackModels($model);
+        $exceptions = [];
+
+        // Try the primary model first
+        try {
+            return $this->processModelRequestWithProvider($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+        } catch (\Exception $e) {
+            Log::warning("Primary model {$model->id} failed: {$e->getMessage()}", [
+                'model' => $model->id,
+                'provider' => $model->provider,
+                'error' => $e->getMessage(),
+            ]);
+            $exceptions[] = $e;
+
+            // If primary model fails, try fallbacks in order
+            foreach ($fallbackModels as $fallbackModel) {
+                try {
+                    Log::info("Trying fallback model {$fallbackModel->id} after primary model failed");
+                    return $this->processModelRequestWithProvider($fallbackModel, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                } catch (\Exception $fallbackException) {
+                    Log::warning("Fallback model {$fallbackModel->id} failed: {$fallbackException->getMessage()}", [
+                        'model' => $fallbackModel->id,
+                        'provider' => $fallbackModel->provider,
+                        'error' => $fallbackException->getMessage(),
+                    ]);
+                    $exceptions[] = $fallbackException;
+                    continue;
+                }
+            }
+
+            // If all models failed, throw an exception with details
+            $errorMessages = array_map(fn($e) => $e->getMessage(), $exceptions);
+            throw new \Exception("All AI models failed: " . implode("; ", $errorMessages));
         }
+    }
+
+    /**
+     * Process the model request with a specific provider
+     */
+    private function processModelRequestWithProvider(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        // Implement retry logic with exponential backoff
+        $maxRetries = config('ai.retry_attempts', 3);
+        $baseDelay = config('ai.retry_delay', 1000); // milliseconds
+
+        for ($attempt = 0; $attempt <= $maxRetries; $attempt++) {
+            try {
+                switch ($model->provider) {
+                    case 'openai':
+                        return $this->processOpenAIRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'anthropic':
+                        return $this->processAnthropicRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'google':
+                        return $this->processGoogleRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'grok':
+                        return $this->processGrokRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'huggingface':
+                        return $this->processHuggingFaceRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'openrouter':
+                        return $this->processOpenRouterRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'mistral':
+                        return $this->processMistralRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'deepseek':
+                        return $this->processDeepSeekRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    case 'cohere':
+                        return $this->processCohereRequest($model, $prompt, $temperature, $maxTokens, $contextData, $knowledgeResults);
+                    default:
+                        throw new \Exception("Unsupported AI provider: {$model->provider}");
+                }
+            } catch (\Exception $e) {
+                // Check if this is the last attempt
+                if ($attempt === $maxRetries) {
+                    throw $e; // Re-throw the exception if we've exhausted all retries
+                }
+
+                // Check if the error is retryable
+                if (!$this->isRetryableError($e)) {
+                    throw $e; // Don't retry if the error is not retryable
+                }
+
+                // Calculate delay with exponential backoff and jitter
+                $delay = $baseDelay * pow(2, $attempt) + rand(0, 1000);
+                Log::info("Retrying AI request after error: {$e->getMessage()}", [
+                    'attempt' => $attempt + 1,
+                    'max_retries' => $maxRetries,
+                    'delay_ms' => $delay,
+                ]);
+
+                // Sleep for the calculated delay
+                usleep($delay * 1000);
+            }
+        }
+
+        // This should never be reached due to the throw in the loop
+        throw new \Exception("Failed to process model request after {$maxRetries} retries");
+    }
+
+    /**
+     * Get fallback models for a given model
+     */
+    private function getFallbackModels(AIModel $primaryModel): array
+    {
+        // Get fallback models from configuration or database
+        $fallbackModels = [];
+
+        // First, try to get models from the same provider
+        $sameProviderModels = AIModel::where('provider', $primaryModel->provider)
+            ->where('id', '!=', $primaryModel->id)
+            ->where('is_available', true)
+            ->orderBy('priority', 'desc')
+            ->get();
+
+        if ($sameProviderModels->isNotEmpty()) {
+            $fallbackModels = array_merge($fallbackModels, $sameProviderModels->all());
+        }
+
+        // Then, try to get models from other providers
+        $otherProviderModels = AIModel::where('provider', '!=', $primaryModel->provider)
+            ->where('is_available', true)
+            ->orderBy('priority', 'desc')
+            ->get();
+
+        if ($otherProviderModels->isNotEmpty()) {
+            $fallbackModels = array_merge($fallbackModels, $otherProviderModels->all());
+        }
+
+        return $fallbackModels;
+    }
+
+    /**
+     * Check if an error is retryable
+     */
+    private function isRetryableError(\Exception $e): bool
+    {
+        // List of error patterns that are retryable
+        $retryablePatterns = [
+            'rate limit',
+            'timeout',
+            'connection',
+            'server error',
+            '5\d\d', // 5xx status codes
+            'too many requests',
+            'capacity',
+            'overloaded',
+            'try again',
+            'temporary',
+        ];
+
+        $message = strtolower($e->getMessage());
+
+        foreach ($retryablePatterns as $pattern) {
+            if (preg_match('/' . $pattern . '/i', $message)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -869,17 +1018,7 @@ class AIService
 
         // Add knowledge base context if available
         if (!empty($knowledgeResults)) {
-            $knowledgeContext = "I am providing you with some relevant information from my knowledge base. Please use this information to help answer the user's question if applicable:\n\n";
-
-            foreach ($knowledgeResults as $index => $result) {
-                $knowledgeContext .= "--- Information {$index} from {$result['knowledge_base']['name']} ---\n";
-                $knowledgeContext .= "Title: {$result['title']}\n";
-                $knowledgeContext .= "Content: {$result['content']}\n";
-                if (!empty($result['source_url'])) {
-                    $knowledgeContext .= "Source: {$result['source_url']}\n";
-                }
-                $knowledgeContext .= "---\n\n";
-            }
+            $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
 
             $messages[] = [
                 'role' => 'system',
@@ -1347,6 +1486,443 @@ class AIService
     }
 
     /**
+     * Process request for Grok models
+     */
+    private function processGrokRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        $apiKey = env('GROK_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('Grok API key is not configured');
+        }
+
+        $baseUrl = env('GROK_API_URL', 'https://api.grok.ai/v1');
+        $url = "{$baseUrl}/chat/completions";
+
+        $messages = [];
+        if ($contextData && isset($contextData['systemPrompt'])) {
+            $messages[] = [
+                'role' => 'system',
+                'content' => $contextData['systemPrompt']
+            ];
+        } else {
+            $messages[] = [
+                'role' => 'system',
+                'content' => 'You are a helpful assistant.'
+            ];
+        }
+
+        // Add knowledge base context if available
+        if (!empty($knowledgeResults)) {
+            $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+
+            $messages[] = [
+                'role' => 'system',
+                'content' => $knowledgeContext
+            ];
+        }
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $prompt
+        ];
+
+        $payload = [
+            'model' => $model->id,
+            'messages' => $messages,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+        ];
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $error = $response->json();
+            Log::error('Grok API Error', ['error' => $error]);
+            throw new \Exception('Grok API Error: ' . ($error['error']['message'] ?? 'Unknown error'));
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Process request for HuggingFace models
+     */
+    private function processHuggingFaceRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        $apiKey = env('HUGGINGFACE_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('HuggingFace API key is not configured');
+        }
+
+        $baseUrl = env('HUGGINGFACE_API_URL', 'https://api-inference.huggingface.co/models');
+        $url = "{$baseUrl}/{$model->id}";
+
+        // Format the prompt based on the model
+        $formattedPrompt = $prompt;
+
+        // Add system prompt if available
+        if ($contextData && isset($contextData['systemPrompt'])) {
+            $formattedPrompt = $contextData['systemPrompt'] . "\n\n" . $prompt;
+        }
+
+        // Add knowledge base context if available
+        if (!empty($knowledgeResults)) {
+            $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+            $formattedPrompt = $knowledgeContext . "\n\n" . $formattedPrompt;
+        }
+
+        $payload = [
+            'inputs' => $formattedPrompt,
+            'parameters' => [
+                'temperature' => $temperature,
+                'max_new_tokens' => $maxTokens,
+                'return_full_text' => false,
+            ],
+        ];
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $error = $response->json();
+            Log::error('HuggingFace API Error', ['error' => $error]);
+            throw new \Exception('HuggingFace API Error: ' . ($error['error'] ?? 'Unknown error'));
+        }
+
+        $hfResponse = $response->json();
+        $content = '';
+
+        // Extract content based on response format
+        if (is_array($hfResponse) && isset($hfResponse[0]['generated_text'])) {
+            $content = $hfResponse[0]['generated_text'];
+        } elseif (is_string($hfResponse)) {
+            $content = $hfResponse;
+        }
+
+        // Transform HuggingFace response to match OpenAI format for consistency
+        return [
+            'id' => Str::uuid()->toString(),
+            'object' => 'chat.completion',
+            'created' => now()->timestamp,
+            'model' => $model->id,
+            'choices' => [
+                [
+                    'index' => 0,
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => $content,
+                    ],
+                    'finish_reason' => 'stop',
+                ],
+            ],
+            'usage' => [
+                'prompt_tokens' => strlen($formattedPrompt) / 4, // Rough estimate
+                'completion_tokens' => strlen($content) / 4, // Rough estimate
+                'total_tokens' => (strlen($formattedPrompt) + strlen($content)) / 4, // Rough estimate
+            ],
+        ];
+    }
+
+    /**
+     * Process request for OpenRouter models
+     */
+    private function processOpenRouterRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        $apiKey = env('OPENROUTER_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('OpenRouter API key is not configured');
+        }
+
+        $baseUrl = env('OPENROUTER_API_URL', 'https://openrouter.ai/api/v1');
+        $url = "{$baseUrl}/chat/completions";
+
+        $messages = [];
+        if ($contextData && isset($contextData['systemPrompt'])) {
+            $messages[] = [
+                'role' => 'system',
+                'content' => $contextData['systemPrompt']
+            ];
+        } else {
+            $messages[] = [
+                'role' => 'system',
+                'content' => 'You are a helpful assistant.'
+            ];
+        }
+
+        // Add knowledge base context if available
+        if (!empty($knowledgeResults)) {
+            $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+
+            $messages[] = [
+                'role' => 'system',
+                'content' => $knowledgeContext
+            ];
+        }
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $prompt
+        ];
+
+        $payload = [
+            'model' => $model->id,
+            'messages' => $messages,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+        ];
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => config('app.name'),
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $error = $response->json();
+            Log::error('OpenRouter API Error', ['error' => $error]);
+            throw new \Exception('OpenRouter API Error: ' . ($error['error']['message'] ?? 'Unknown error'));
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Process request for Mistral models
+     */
+    private function processMistralRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        $apiKey = env('MISTRAL_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('Mistral API key is not configured');
+        }
+
+        $baseUrl = env('MISTRAL_API_URL', 'https://api.mistral.ai/v1');
+        $url = "{$baseUrl}/chat/completions";
+
+        $messages = [];
+        if ($contextData && isset($contextData['systemPrompt'])) {
+            $messages[] = [
+                'role' => 'system',
+                'content' => $contextData['systemPrompt']
+            ];
+        }
+
+        // Add knowledge base context if available
+        if (!empty($knowledgeResults)) {
+            $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+
+            $messages[] = [
+                'role' => 'system',
+                'content' => $knowledgeContext
+            ];
+        }
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $prompt
+        ];
+
+        $payload = [
+            'model' => $model->id,
+            'messages' => $messages,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+        ];
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $error = $response->json();
+            Log::error('Mistral API Error', ['error' => $error]);
+            throw new \Exception('Mistral API Error: ' . ($error['error']['message'] ?? 'Unknown error'));
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Process request for DeepSeek models
+     */
+    private function processDeepSeekRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        $apiKey = env('DEEPSEEK_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('DeepSeek API key is not configured');
+        }
+
+        $baseUrl = env('DEEPSEEK_API_URL', 'https://api.deepseek.com/v1');
+        $url = "{$baseUrl}/chat/completions";
+
+        $messages = [];
+        if ($contextData && isset($contextData['systemPrompt'])) {
+            $messages[] = [
+                'role' => 'system',
+                'content' => $contextData['systemPrompt']
+            ];
+        } else {
+            $messages[] = [
+                'role' => 'system',
+                'content' => 'You are a helpful assistant.'
+            ];
+        }
+
+        // Add knowledge base context if available
+        if (!empty($knowledgeResults)) {
+            $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+
+            $messages[] = [
+                'role' => 'system',
+                'content' => $knowledgeContext
+            ];
+        }
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $prompt
+        ];
+
+        $payload = [
+            'model' => $model->id,
+            'messages' => $messages,
+            'temperature' => $temperature,
+            'max_tokens' => $maxTokens,
+        ];
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $error = $response->json();
+            Log::error('DeepSeek API Error', ['error' => $error]);
+            throw new \Exception('DeepSeek API Error: ' . ($error['error']['message'] ?? 'Unknown error'));
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Process request for Cohere models
+     */
+    private function processCohereRequest(AIModel $model, string $prompt, float $temperature, int $maxTokens, ?array $contextData, ?array $knowledgeResults = null): array
+    {
+        $apiKey = env('COHERE_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('Cohere API key is not configured');
+        }
+
+        $baseUrl = env('COHERE_API_URL', 'https://api.cohere.ai/v1');
+
+        // Cohere uses a different endpoint for chat vs. generation
+        $isChatModel = strpos($model->id, 'command') !== false;
+        $url = $isChatModel ? "{$baseUrl}/chat" : "{$baseUrl}/generate";
+
+        // Format the request based on endpoint type
+        if ($isChatModel) {
+            // Chat endpoint
+            $payload = [
+                'model' => $model->id,
+                'message' => $prompt,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+            ];
+
+            // Add system prompt if available
+            if ($contextData && isset($contextData['systemPrompt'])) {
+                $payload['preamble'] = $contextData['systemPrompt'];
+            }
+
+            // Add knowledge base context if available
+            if (!empty($knowledgeResults)) {
+                $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+                $payload['documents'] = array_map(function($result) {
+                    return [
+                        'title' => $result['title'] ?? '',
+                        'snippet' => $result['content'] ?? $result['text'] ?? '',
+                    ];
+                }, $knowledgeResults);
+            }
+        } else {
+            // Generate endpoint
+            $formattedPrompt = $prompt;
+
+            // Add system prompt if available
+            if ($contextData && isset($contextData['systemPrompt'])) {
+                $formattedPrompt = $contextData['systemPrompt'] . "\n\n" . $prompt;
+            }
+
+            // Add knowledge base context if available
+            if (!empty($knowledgeResults)) {
+                $knowledgeContext = $this->formatKnowledgeBaseContext($knowledgeResults);
+                $formattedPrompt = $knowledgeContext . "\n\n" . $formattedPrompt;
+            }
+
+            $payload = [
+                'model' => $model->id,
+                'prompt' => $formattedPrompt,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+            ];
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $error = $response->json();
+            Log::error('Cohere API Error', ['error' => $error]);
+            throw new \Exception('Cohere API Error: ' . ($error['message'] ?? 'Unknown error'));
+        }
+
+        $cohereResponse = $response->json();
+
+        // Transform Cohere response to match OpenAI format for consistency
+        if ($isChatModel) {
+            $content = $cohereResponse['text'] ?? '';
+            $promptTokens = $cohereResponse['meta']['prompt_tokens'] ?? 0;
+            $completionTokens = $cohereResponse['meta']['response_tokens'] ?? 0;
+        } else {
+            $content = $cohereResponse['generations'][0]['text'] ?? '';
+            $promptTokens = $cohereResponse['meta']['prompt_tokens'] ?? 0;
+            $completionTokens = $cohereResponse['meta']['completion_tokens'] ?? 0;
+        }
+
+        return [
+            'id' => $cohereResponse['id'] ?? Str::uuid()->toString(),
+            'object' => 'chat.completion',
+            'created' => now()->timestamp,
+            'model' => $model->id,
+            'choices' => [
+                [
+                    'index' => 0,
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => $content,
+                    ],
+                    'finish_reason' => 'stop',
+                ],
+            ],
+            'usage' => [
+                'prompt_tokens' => $promptTokens,
+                'completion_tokens' => $completionTokens,
+                'total_tokens' => $promptTokens + $completionTokens,
+            ],
+        ];
+    }
+
+    /**
      * Check if a string is valid JSON
      */
     private function isValidJson(string $string): bool
@@ -1583,7 +2159,7 @@ class AIService
     }
 
     /**
-     * Search knowledge bases for relevant content
+     * Search knowledge bases for relevant information
      */
     public function searchKnowledgeBases(string $query, ?array $knowledgeBaseIds = null): array
     {
@@ -1608,7 +2184,72 @@ class AIService
                 return [];
             }
 
-            // Search for entries in accessible knowledge bases
+            // Use the new VectorSearchService for improved semantic search
+            $vectorSearchService = app(\App\Services\KnowledgeBase\VectorSearch\VectorSearchService::class);
+
+            // First try hybrid search (combining vector and keyword search)
+            if (strlen($query) > 5) {
+                $results = [];
+                $limit = 5; // Limit to top 5 most relevant results
+
+                // Perform hybrid search for each knowledge base
+                foreach ($accessibleBaseIds as $baseId) {
+                    $knowledgeBase = KnowledgeBase::find($baseId);
+                    if (!$knowledgeBase) continue;
+
+                    // Use the knowledge base's specific settings
+                    $minSimilarity = $knowledgeBase->similarity_threshold ?? 0.7;
+
+                    // Check if hybrid search is enabled for this knowledge base
+                    if ($knowledgeBase->use_hybrid_search ?? true) {
+                        $vectorResults = $vectorSearchService->hybridSearch(
+                            $query,
+                            $knowledgeBase,
+                            $limit,
+                            $minSimilarity,
+                            $knowledgeBase->vector_search_weight ?? 70,
+                            $knowledgeBase->keyword_search_weight ?? 30
+                        );
+                    } else {
+                        // Fallback to vector-only search if hybrid is disabled
+                        $vectorResults = $vectorSearchService->vectorSearch(
+                            $query,
+                            $knowledgeBase,
+                            $limit,
+                            $minSimilarity
+                        );
+                    }
+
+                    // Merge results from this knowledge base
+                    foreach ($vectorResults as $entry) {
+                        $results[] = [
+                            'id' => $entry->id,
+                            'title' => $entry->title,
+                            'content' => $entry->content,
+                            'summary' => $entry->summary,
+                            'source_url' => $entry->source_url,
+                            'source_type' => $entry->source_type,
+                            'similarity_score' => $entry->similarity_score,
+                            'knowledge_base' => [
+                                'id' => $entry->knowledge_base_id,
+                                'name' => $knowledgeBase->name,
+                                'source_type' => $knowledgeBase->source_type,
+                            ],
+                        ];
+                    }
+                }
+
+                // Sort results by similarity score and take the top ones
+                if (!empty($results)) {
+                    usort($results, function($a, $b) {
+                        return $b['similarity_score'] <=> $a['similarity_score'];
+                    });
+
+                    return array_slice($results, 0, $limit);
+                }
+            }
+
+            // Fall back to traditional full-text search if vector search didn't yield results
             $entries = KnowledgeEntry::whereIn('knowledge_base_id', $accessibleBaseIds)
                 ->where('is_active', true)
                 ->whereFullText(['title', 'content'], $query)
@@ -1622,7 +2263,7 @@ class AIService
                 $results[] = [
                     'id' => $entry->id,
                     'title' => $entry->title,
-                    'content' => $entry->formatted_content,
+                    'content' => $entry->formatted_content ?? $entry->content,
                     'summary' => $entry->summary,
                     'source_url' => $entry->source_url,
                     'source_type' => $entry->source_type,
@@ -1636,11 +2277,47 @@ class AIService
 
             return $results;
         } catch (\Exception $e) {
-            Log::error('Failed to search knowledge bases', [
+            Log::error('Error searching knowledge bases', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'query' => $query,
             ]);
             return [];
         }
+    }
+
+    /**
+     * Format knowledge base results into context for AI prompts
+     * This is a public method to allow other services to format knowledge base context without duplicating code
+     */
+    public function formatKnowledgeBaseContext(array $knowledgeResults): string
+    {
+        if (empty($knowledgeResults)) {
+            return '';
+        }
+
+        $knowledgeContext = "I am providing you with some relevant information from my knowledge base. Please use this information to help answer the user's question if applicable:\n\n";
+
+        foreach ($knowledgeResults as $index => $result) {
+            $knowledgeContext .= "--- Information #{$index} from {$result['knowledge_base']['name']} ---\n";
+            $knowledgeContext .= "Title: {$result['title']}\n";
+            $knowledgeContext .= "Content: {$result['content']}\n";
+
+            if (!empty($result['source_url'])) {
+                $knowledgeContext .= "Source: {$result['source_url']}\n";
+            }
+
+            if (!empty($result['similarity_score'])) {
+                $confidence = number_format($result['similarity_score'] * 100, 1);
+                $knowledgeContext .= "Relevance: {$confidence}%\n";
+            }
+
+            $knowledgeContext .= "---\n\n";
+        }
+
+        $knowledgeContext .= "When referencing this information in your response, please cite the source as [Knowledge Base #X] where X is the information number.\n";
+        $knowledgeContext .= "If the provided information doesn't fully answer the query, use your general knowledge to supplement it.\n";
+
+        return $knowledgeContext;
     }
 }

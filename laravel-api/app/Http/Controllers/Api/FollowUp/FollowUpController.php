@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\FollowUp;
 use App\Http\Controllers\Controller;
 use App\Models\AI\FollowUpConfig;
 use App\Models\AI\FollowUpQuestion;
+use App\Services\FollowUp\FollowUpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -14,21 +15,19 @@ use Illuminate\Support\Str;
 
 class FollowUpController extends Controller
 {
+    protected $followUpService;
+
+    public function __construct(FollowUpService $followUpService)
+    {
+        $this->followUpService = $followUpService;
+    }
+
     /**
      * Get all follow-up configurations
      */
     public function index(Request $request): JsonResponse
     {
-        $query = FollowUpConfig::query();
-
-        // Filter by user if requested
-        if ($request->has('user_id')) {
-            $query->where('user_id', $request->input('user_id'));
-        }
-
-        $configs = $query->with('questions')->get();
-
-        return response()->json($configs);
+        return $this->followUpService->getAllConfigs();
     }
 
     /**
@@ -36,13 +35,7 @@ class FollowUpController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $config = FollowUpConfig::with('questions')->find($id);
-
-        if (!$config) {
-            return response()->json(['message' => 'Follow-up configuration not found'], 404);
-        }
-
-        return response()->json($config);
+        return $this->followUpService->getConfig($id);
     }
 
     /**
@@ -51,7 +44,6 @@ class FollowUpController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'name' => 'required|string|max:255',
             'enable_follow_up_questions' => 'boolean',
             'max_follow_up_questions' => 'integer|min:1|max:10',
@@ -60,36 +52,21 @@ class FollowUpController extends Controller
             'is_default' => 'boolean',
             'predefined_question_sets' => 'nullable|array',
             'topic_based_question_sets' => 'nullable|array',
+            'questions' => 'nullable|array',
+            'questions.*.question' => 'required|string',
+            'questions.*.display_order' => 'integer',
+            'questions.*.is_active' => 'boolean',
+            'questions.*.priority' => 'string|in:high,medium,low',
+            'questions.*.display_position' => 'string|in:beginning,middle,end',
+            'questions.*.category' => 'nullable|string',
+            'questions.*.metadata' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Create the config
-        $config = new FollowUpConfig($request->all());
-        $config->id = (string) Str::uuid();
-        $config->save();
-
-        // If questions were included, create them
-        if ($request->has('questions') && is_array($request->input('questions'))) {
-            foreach ($request->input('questions') as $questionData) {
-                $question = new FollowUpQuestion([
-                    'question' => $questionData['question'] ?? '',
-                    'display_order' => $questionData['display_order'] ?? 0,
-                    'is_active' => $questionData['is_active'] ?? true,
-                    'priority' => $questionData['priority'] ?? 'medium',
-                    'display_position' => $questionData['display_position'] ?? 'end',
-                    'category' => $questionData['category'] ?? null,
-                    'metadata' => $questionData['metadata'] ?? null,
-                ]);
-                $question->id = (string) Str::uuid();
-                $question->config_id = $config->id;
-                $question->save();
-            }
-        }
-
-        return response()->json($config->load('questions'), 201);
+        return $this->followUpService->createConfig($request->all());
     }
 
     /**
@@ -97,12 +74,6 @@ class FollowUpController extends Controller
      */
     public function update(Request $request, string $id): JsonResponse
     {
-        $config = FollowUpConfig::find($id);
-
-        if (!$config) {
-            return response()->json(['message' => 'Follow-up configuration not found'], 404);
-        }
-
         $validator = Validator::make($request->all(), [
             'name' => 'string|max:255',
             'enable_follow_up_questions' => 'boolean',
@@ -118,20 +89,7 @@ class FollowUpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $config->fill($request->only([
-            'name',
-            'enable_follow_up_questions',
-            'max_follow_up_questions',
-            'show_follow_up_as',
-            'generate_automatically',
-            'is_default',
-            'predefined_question_sets',
-            'topic_based_question_sets',
-        ]));
-
-        $config->save();
-
-        return response()->json($config->load('questions'));
+        return $this->followUpService->updateConfig($id, $request->all());
     }
 
     /**
@@ -139,31 +97,15 @@ class FollowUpController extends Controller
      */
     public function destroy(string $id): JsonResponse
     {
-        $config = FollowUpConfig::find($id);
-
-        if (!$config) {
-            return response()->json(['message' => 'Follow-up configuration not found'], 404);
-        }
-
-        $config->delete();
-
-        return response()->json(['message' => 'Follow-up configuration deleted successfully']);
+        return $this->followUpService->deleteConfig($id);
     }
 
     /**
-     * Get questions for a specific configuration
+     * Get all questions for a specific configuration
      */
     public function getQuestions(string $configId): JsonResponse
     {
-        $config = FollowUpConfig::find($configId);
-
-        if (!$config) {
-            return response()->json(['message' => 'Follow-up configuration not found'], 404);
-        }
-
-        $questions = $config->questions()->orderBy('display_order')->get();
-
-        return response()->json($questions);
+        return $this->followUpService->getQuestions($configId);
     }
 
     /**
@@ -171,12 +113,6 @@ class FollowUpController extends Controller
      */
     public function addQuestion(Request $request, string $configId): JsonResponse
     {
-        $config = FollowUpConfig::find($configId);
-
-        if (!$config) {
-            return response()->json(['message' => 'Follow-up configuration not found'], 404);
-        }
-
         $validator = Validator::make($request->all(), [
             'question' => 'required|string',
             'display_order' => 'integer|min:0',
@@ -191,12 +127,7 @@ class FollowUpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $question = new FollowUpQuestion($request->all());
-        $question->id = (string) Str::uuid();
-        $question->config_id = $configId;
-        $question->save();
-
-        return response()->json($question, 201);
+        return $this->followUpService->addQuestion($configId, $request->all());
     }
 
     /**
@@ -204,12 +135,6 @@ class FollowUpController extends Controller
      */
     public function updateQuestion(Request $request, string $id): JsonResponse
     {
-        $question = FollowUpQuestion::find($id);
-
-        if (!$question) {
-            return response()->json(['message' => 'Follow-up question not found'], 404);
-        }
-
         $validator = Validator::make($request->all(), [
             'question' => 'string',
             'display_order' => 'integer|min:0',
@@ -224,19 +149,7 @@ class FollowUpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $question->fill($request->only([
-            'question',
-            'display_order',
-            'is_active',
-            'priority',
-            'display_position',
-            'category',
-            'metadata',
-        ]));
-
-        $question->save();
-
-        return response()->json($question);
+        return $this->followUpService->updateQuestion($id, $request->all());
     }
 
     /**
@@ -244,15 +157,24 @@ class FollowUpController extends Controller
      */
     public function deleteQuestion(string $id): JsonResponse
     {
-        $question = FollowUpQuestion::find($id);
+        return $this->followUpService->deleteQuestion($id);
+    }
 
-        if (!$question) {
-            return response()->json(['message' => 'Follow-up question not found'], 404);
+    /**
+     * Reorder questions in a configuration
+     */
+    public function reorderQuestions(Request $request, string $configId): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'question_ids' => 'required|array',
+            'question_ids.*' => 'string|exists:follow_up_questions,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $question->delete();
-
-        return response()->json(['message' => 'Follow-up question deleted successfully']);
+        return $this->followUpService->reorderQuestions($configId, $request->input('question_ids'));
     }
 
     /**
@@ -271,56 +193,7 @@ class FollowUpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Find the configuration to use
-        $configId = $request->input('config_id');
-        $config = null;
-
-        if ($configId) {
-            $config = FollowUpConfig::find($configId);
-        } else {
-            // Get the default configuration
-            $config = FollowUpConfig::where('is_default', true)->first();
-        }
-
-        if (!$config || !$config->enable_follow_up_questions) {
-            // Return empty follow-ups if no config is found or follow-ups are disabled
-            return response()->json([
-                'follow_up_questions' => [],
-                'config_used' => null,
-            ]);
-        }
-
-        $userQuery = $request->input('user_query');
-        $aiResponse = $request->input('ai_response');
-        $context = $request->input('context', []);
-
-        // If automatic generation is turned off, get predefined questions from the config
-        if (!$config->generate_automatically) {
-            $followUpQuestions = $config->questions()
-                ->where('is_active', true)
-                ->orderBy('priority', 'desc')
-                ->orderBy('display_order')
-                ->limit($config->max_follow_up_questions)
-                ->get();
-
-            return response()->json([
-                'follow_up_questions' => $followUpQuestions,
-                'config_used' => $config->id,
-                'source' => 'predefined',
-            ]);
-        }
-
-        // Use AI to generate context-aware follow-up questions (in a real implementation)
-        // Here we would call the AI service to generate relevant follow-up questions
-        // For now, return some sample follow-ups based on the user query
-
-        $generatedQuestions = $this->sampleFollowUps($userQuery, $aiResponse, $context);
-
-        return response()->json([
-            'follow_up_questions' => $generatedQuestions,
-            'config_used' => $config->id,
-            'source' => 'generated',
-        ]);
+        return $this->followUpService->generateFollowUps($request->all());
     }
 
     /**
@@ -333,73 +206,13 @@ class FollowUpController extends Controller
             'previous_query' => 'required|string',
             'previous_response' => 'required|string',
             'context' => 'nullable|array',
+            'user_id' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $selectedQuestion = $request->input('selected_question');
-        $previousQuery = $request->input('previous_query');
-        $previousResponse = $request->input('previous_response');
-        $context = $request->input('context', []);
-
-        // In a real implementation, this would modify the AI prompt to respond to the follow-up
-
-        return response()->json([
-            'modified_prompt' => "Previous question: {$previousQuery}\n" .
-                                "Previous answer: {$previousResponse}\n" .
-                                "Follow-up question: {$selectedQuestion}",
-            'context_updated' => true,
-        ]);
-    }
-
-    /**
-     * Generate sample follow-up questions (to be replaced with actual AI generation)
-     */
-    private function sampleFollowUps(string $userQuery, string $aiResponse, array $context): array
-    {
-        // Simplified for prototype purposes - in production would use actual AI
-        $followUps = [];
-
-        // Extract keywords from the user query
-        $keywords = ['how', 'what', 'why', 'when', 'where'];
-        $queryWords = explode(' ', strtolower($userQuery));
-
-        if (in_array('how', $queryWords)) {
-            $followUps[] = [
-                'id' => (string) Str::uuid(),
-                'question' => 'Would you like more detailed steps on this process?',
-                'priority' => 'high',
-                'display_position' => 'end',
-            ];
-        }
-
-        if (in_array('what', $queryWords)) {
-            $followUps[] = [
-                'id' => (string) Str::uuid(),
-                'question' => 'Do you want examples of this concept?',
-                'priority' => 'medium',
-                'display_position' => 'end',
-            ];
-        }
-
-        // Always include general follow-ups
-        $followUps[] = [
-            'id' => (string) Str::uuid(),
-            'question' => 'Would you like me to explain any part of this in more detail?',
-            'priority' => 'medium',
-            'display_position' => 'end',
-        ];
-
-        $followUps[] = [
-            'id' => (string) Str::uuid(),
-            'question' => 'Is there anything specific you want to know about this topic?',
-            'priority' => 'low',
-            'display_position' => 'end',
-        ];
-
-        // Only return a limited number of follow-ups
-        return array_slice($followUps, 0, 3);
+        return $this->followUpService->processSelectedFollowUp($request->all());
     }
 }

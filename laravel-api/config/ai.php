@@ -66,4 +66,84 @@ return [
             'retry_attempts' => env('COHERE_RETRY_ATTEMPTS', 3),
         ],
     ],
+
+    // Embedding configuration
+    'embeddings' => [
+        'default_provider' => env('DEFAULT_EMBEDDING_PROVIDER', 'huggingface'),
+        'dimensions' => env('EMBEDDING_DIMENSIONS', 384),
+
+        'providers' => [
+            'openai' => [
+                'model' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-ada-002'),
+                'max_tokens' => env('OPENAI_MAX_TOKENS', 8000),
+            ],
+
+            'huggingface' => [
+                'model' => env('HUGGINGFACE_EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2'),
+                'use_free_inference' => env('HUGGINGFACE_USE_FREE_INFERENCE', true),
+            ],
+        ],
+    ],
+
+    // Cache configuration
+    'cache' => [
+        'enabled' => env('AI_CACHE_ENABLED', true),
+        'ttl' => env('AI_CACHE_TTL', 3600), // 1 hour
+    ],
+
+    // Logging configuration
+    'logging' => [
+        'enabled' => env('AI_LOGGING_ENABLED', true),
+        'level' => env('AI_LOGGING_LEVEL', 'info'),
+    ],
+
+    // Rate limiting
+    'rate_limits' => [
+        'enabled' => env('AI_RATE_LIMITS_ENABLED', true),
+        'max_requests_per_minute' => env('AI_MAX_REQUESTS_PER_MINUTE', 60),
+        'openai' => env('OPENAI_RATE_LIMIT', 60),
+        'anthropic' => env('ANTHROPIC_RATE_LIMIT', 30),
+        'gemini' => env('GEMINI_RATE_LIMIT', 60),
+        'grok' => env('GROK_RATE_LIMIT', 20),
+        'huggingface' => env('HUGGINGFACE_RATE_LIMIT', 10),
+        'openrouter' => env('OPENROUTER_RATE_LIMIT', 60),
+        'mistral' => env('MISTRAL_RATE_LIMIT', 30),
+        'deepseek' => env('DEEPSEEK_RATE_LIMIT', 20),
+        'cohere' => env('COHERE_RATE_LIMIT', 30),
+    ],
+
+    // Global retry configuration
+    'retry' => [
+        'attempts' => env('AI_RETRY_ATTEMPTS', 3),
+        'delay' => env('AI_RETRY_DELAY', 1000), // milliseconds
+    ],
+
+    // Fallback configuration
+    'fallback' => [
+        'enabled' => env('AI_FALLBACK_ENABLED', true),
+        'provider_order' => [
+            'openai',
+            'anthropic',
+            'gemini',
+            'mistral',
+            'openrouter',
+            'cohere',
+            'deepseek',
+            'huggingface',
+            'grok',
+        ],
+    ],
+
+    // Token budget controls
+    'token_budget' => [
+        'enabled' => env('AI_TOKEN_BUDGET_ENABLED', true),
+        'default_budget' => env('AI_DEFAULT_TOKEN_BUDGET', 1000000), // per month
+        'alert_threshold' => env('AI_BUDGET_ALERT_THRESHOLD', 0.8), // 80% of budget
+    ],
+
+    // Prompt templates
+    'prompt_templates' => [
+        'cache_ttl' => env('AI_PROMPT_TEMPLATE_CACHE_TTL', 3600), // 1 hour
+        'version_history_limit' => env('AI_PROMPT_TEMPLATE_VERSION_HISTORY', 10),
+    ],
 ];

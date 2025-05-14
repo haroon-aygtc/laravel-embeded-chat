@@ -3,40 +3,13 @@
  *
  * This service provides methods for interacting with context rules endpoints.
  */
-
 import { api, ApiResponse } from "../middleware/apiMiddleware";
+import { ContextRule, ContextRuleTestResult } from "@/types/contextRules";
 
-export interface ContextRule {
-  id: string;
-  name: string;
-  description?: string;
-  allowedTopics: string[];
-  excludedTopics: string[];
-  keywordTriggers: string[];
-  responseInstructions?: string;
-  preferredModel?: string;
-  useKnowledgeBases?: boolean;
-  isDefault: boolean;
-  userId: string;
-  responseFilters?: Array<{
-    type: "keyword" | "regex";
-    value: string;
-    action: "block" | "replace";
-    replacement?: string;
-  }>;
-  createdAt: string;
-  updatedAt: string;
-}
 
-export interface TestRuleRequest {
-  query: string;
-}
-
-export interface TestRuleResponse {
-  result: "allowed" | "blocked";
-  matches: string[];
-  explanation: string;
-}
+// Use the main ContextRule type from types/contextRules.ts
+// Export it again for convenience
+export type { ContextRule };
 
 export const contextRulesApi = {
   /**
@@ -57,7 +30,7 @@ export const contextRulesApi = {
    * Create a new context rule
    */
   createRule: async (
-    rule: Omit<ContextRule, "id" | "createdAt" | "updatedAt">,
+    rule: Partial<ContextRule>,
   ): Promise<ApiResponse<ContextRule>> => {
     return api.post<ContextRule>("/context-rules", rule);
   },
@@ -85,8 +58,8 @@ export const contextRulesApi = {
   testRule: async (
     ruleId: string,
     query: string,
-  ): Promise<ApiResponse<TestRuleResponse>> => {
-    return api.post<TestRuleResponse>(`/context-rules/${ruleId}/test`, {
+  ): Promise<ApiResponse<ContextRuleTestResult>> => {
+    return api.post<ContextRuleTestResult>(`/context-rules/${ruleId}/test`, {
       query,
     });
   },

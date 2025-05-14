@@ -1,5 +1,5 @@
 import { api } from "../middleware/apiMiddleware";
-import { FollowUpConfigData } from "@/services/followUpConfigService";
+import { FollowUpConfigData } from "./followupfeatures";
 
 /**
  * Follow-up Configuration API Service

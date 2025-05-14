@@ -55,6 +55,15 @@ class KnowledgeBase extends Model
         'metadata',
         'is_public',
         'is_active',
+        'similarity_threshold',
+        'embedding_model',
+        'vector_search_config',
+        'use_hybrid_search',
+        'keyword_search_weight',
+        'vector_search_weight',
+        'auto_chunk_content',
+        'chunk_size',
+        'chunk_overlap',
     ];
 
     /**
@@ -68,6 +77,14 @@ class KnowledgeBase extends Model
         'is_active' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'similarity_threshold' => 'float',
+        'vector_search_config' => 'json',
+        'use_hybrid_search' => 'boolean',
+        'keyword_search_weight' => 'integer',
+        'vector_search_weight' => 'integer',
+        'auto_chunk_content' => 'boolean',
+        'chunk_size' => 'integer',
+        'chunk_overlap' => 'integer',
     ];
 
     /**
@@ -119,6 +136,46 @@ class KnowledgeBase extends Model
         return $this->entries()
             ->whereFullText(['title', 'content'], $query)
             ->where('is_active', true)
+            ->get();
+    }
+
+    /**
+     * Get chunked entries for this knowledge base.
+     * 
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getChunkedEntries()
+    {
+        return $this->entries()
+            ->whereNotNull('chunk_id')
+            ->whereNotNull('parent_entry_id')
+            ->orderBy('chunk_index')
+            ->get();
+    }
+
+    /**
+     * Get parent entries (those that have been chunked)
+     * 
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getParentEntries()
+    {
+        return $this->entries()
+            ->whereNull('parent_entry_id')
+            ->whereRaw("JSON_EXTRACT(metadata, '$.has_chunks') = true")
+            ->get();
+    }
+
+    /**
+     * Get vector-indexed entries
+     * 
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getVectorIndexedEntries()
+    {
+        return $this->entries()
+            ->where('vector_indexed', true)
+            ->whereNotNull('vector_embedding')
             ->get();
     }
 }

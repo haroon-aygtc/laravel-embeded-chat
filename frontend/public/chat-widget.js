@@ -1,527 +1,368 @@
-// Web Component for Chat Widget
+/**
+ * AI Chat Widget - Lightweight, cross-platform chat widget
+ * 
+ * This script creates a minimalistic loader (< 5KB) that dynamically loads 
+ * the full widget functionality when needed. It uses Shadow DOM for style
+ * isolation and supports both iframe and web component embedding methods.
+ */
 
-class ChatWidgetElement extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._isConnected = false;
-    this._resizeObserver = null;
-    this._intersectionObserver = null;
-    this._mediaQueryList = null;
-    this._deviceType = this._getDeviceType();
-  }
-
-  static get observedAttributes() {
-    return [
-      "title",
-      "subtitle",
-      "position",
-      "context-mode",
-      "context-rule-id",
-      "avatar-src",
-      "widget-id",
-      "color",
-      "size",
-      "theme",
-      "auto-open",
-      "lazy-load",
-    ];
-  }
-
-  connectedCallback() {
-    this._isConnected = true;
-
-    // Validate the origin for security
-    this._validateOrigin();
-
-    // Check if lazy loading is enabled
-    const lazyLoad = this.getAttribute("lazy-load") === "true";
-
-    if (lazyLoad) {
-      // Set up intersection observer for lazy loading
-      this._setupIntersectionObserver();
-    } else {
-      // Render immediately if lazy loading is not enabled
-      this.render();
+(function() {
+  // Configuration
+  const API_BASE_URL = window.WIDGET_API_URL || 'http://localhost:8000/api';
+  const FRONTEND_URL = window.WIDGET_FRONTEND_URL || 'http://localhost:3000';
+  const STORAGE_PREFIX = 'ai_chat_widget_';
+  
+  // Create the Web Component for the chat widget
+  class AIChatWidget extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' });
+      this.isOpen = false;
+      this.isLoaded = false;
+      this.widgetId = this.getAttribute('widget-id');
+      this.sessionId = localStorage.getItem(`${STORAGE_PREFIX}session_${this.widgetId}`);
+      this.config = null;
     }
-
-    // Set up resize observer to handle responsive sizing
-    this._setupResizeObserver();
-
-    // Set up media query listeners for responsive design
-    this._setupMediaQueryListeners();
-
-    // Log embedding for analytics (if needed)
-    this._logEmbedding();
-  }
-
-  disconnectedCallback() {
-    this._isConnected = false;
-
-    // Clean up observers
-    if (this._resizeObserver) {
-      this._resizeObserver.disconnect();
-      this._resizeObserver = null;
-    }
-
-    if (this._intersectionObserver) {
-      this._intersectionObserver.disconnect();
-      this._intersectionObserver = null;
-    }
-
-    // Clean up media query listeners
-    if (this._mediaQueryList) {
-      if (this._mediaQueryList.removeEventListener) {
-        this._mediaQueryList.removeEventListener(
-          "change",
-          this._handleOrientationChange,
-        );
-      } else if (this._mediaQueryList.removeListener) {
-        this._mediaQueryList.removeListener(this._handleOrientationChange);
+    
+    async connectedCallback() {
+      if (!this.widgetId) {
+        console.error('AI Chat Widget: No widget-id attribute provided');
+        return;
       }
-      this._mediaQueryList = null;
-    }
-  }
-
-  attributeChangedCallback(name, oldValue, newValue) {
-    if (
-      this._isConnected &&
-      this.shadowRoot.innerHTML !== "" &&
-      oldValue !== newValue
-    ) {
-      this.render();
-    }
-  }
-
-  _setupIntersectionObserver() {
-    // Only observe if IntersectionObserver is supported
-    if ("IntersectionObserver" in window) {
-      this._intersectionObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              this.render();
-              // Once rendered, disconnect the observer
-              this._intersectionObserver.disconnect();
-            }
-          });
-        },
-        { threshold: 0.1 },
-      ); // 10% visibility threshold
-
-      this._intersectionObserver.observe(this);
-    } else {
-      // Fallback for browsers that don't support IntersectionObserver
-      this.render();
-    }
-  }
-
-  _setupResizeObserver() {
-    // Only observe if ResizeObserver is supported
-    if ("ResizeObserver" in window) {
-      this._resizeObserver = new ResizeObserver((entries) => {
-        // Handle resize if needed (e.g., adjust iframe size)
-        const iframe = this.shadowRoot.querySelector("iframe");
-        if (iframe) {
-          const entry = entries[0];
-          const width = entry.contentRect.width;
-          const height = entry.contentRect.height;
-
-          // Add responsive classes based on width
-          if (width < 300) {
-            iframe.classList.add("chat-widget-small");
-            iframe.classList.remove("chat-widget-medium", "chat-widget-large");
-          } else if (width < 500) {
-            iframe.classList.add("chat-widget-medium");
-            iframe.classList.remove("chat-widget-small", "chat-widget-large");
-          } else {
-            iframe.classList.add("chat-widget-large");
-            iframe.classList.remove("chat-widget-small", "chat-widget-medium");
-          }
-
-          // Adjust for very small heights
-          if (height < 400) {
-            iframe.classList.add("chat-widget-compact");
-          } else {
-            iframe.classList.remove("chat-widget-compact");
-          }
-
-          // Dispatch resize event to iframe content
-          this._notifyIframeOfResize(width, height);
-        }
-      });
-
-      this._resizeObserver.observe(this);
-    }
-  }
-
-  _notifyIframeOfResize(width, height) {
-    // Notify the iframe content about resize events
-    const iframe = this.shadowRoot.querySelector("iframe");
-    if (iframe && iframe.contentWindow) {
+      
+      // Initial minimal UI with loading state
+      this.renderInitialUI();
+      
       try {
-        const baseUrl = window.location.origin;
-        iframe.contentWindow.postMessage(
-          {
-            type: "chat-widget-resize",
-            width,
-            height,
-            deviceType: this._deviceType,
-          },
-          baseUrl,
-        );
-      } catch (e) {
-        // Silently fail - iframe might not be loaded yet
+        // Fetch widget configuration
+        await this.loadWidgetConfig();
+        
+        // Initialize session if needed
+        if (!this.sessionId) {
+          await this.createChatSession();
+        }
+        
+        // Render widget button
+        this.renderWidgetButton();
+        
+        // Add event listeners
+        this.addEventListeners();
+      } catch (error) {
+        console.error('AI Chat Widget: Failed to initialize widget', error);
+        this.renderErrorState();
       }
     }
-  }
-
-  _getDeviceType() {
-    // Detect device type based on user agent and screen size
-    const ua = navigator.userAgent;
-    if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
-      return "tablet";
+    
+    renderInitialUI() {
+      // Add base styles to shadow DOM
+      const style = document.createElement('style');
+      style.textContent = `
+        :host {
+          --primary-color: #4F46E5;
+          --secondary-color: #10B981;
+          --background-color: #FFFFFF;
+          --text-color: #1F2937;
+          --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+          --border-radius: 12px;
+          --shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          
+          all: initial;
+          display: block;
+          font-family: var(--font-family);
+          color: var(--text-color);
+          z-index: 99999;
+        }
+        
+        .widget-container {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          z-index: 99999;
+          font-family: var(--font-family);
+        }
+        
+        .widget-button {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          background: var(--primary-color);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: var(--shadow);
+          transition: transform 0.2s ease;
+          border: none;
+        }
+        
+        .widget-button:hover {
+          transform: scale(1.05);
+        }
+        
+        .widget-button svg {
+          width: 28px;
+          height: 28px;
+          fill: white;
+        }
+        
+        .widget-frame {
+          position: fixed;
+          bottom: 100px;
+          right: 20px;
+          width: 380px;
+          height: 600px;
+          border-radius: var(--border-radius);
+          overflow: hidden;
+          box-shadow: var(--shadow);
+          transition: all 0.3s ease;
+          opacity: 0;
+          transform: translateY(20px);
+          pointer-events: none;
+          border: none;
+        }
+        
+        .widget-frame.open {
+          opacity: 1;
+          transform: translateY(0);
+          pointer-events: all;
+        }
+        
+        .widget-close {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          width: 24px;
+          height: 24px;
+          cursor: pointer;
+          z-index: 100000;
+          display: none;
+        }
+        
+        .loader {
+          border: 3px solid rgba(255, 255, 255, 0.3);
+          border-radius: 50%;
+          border-top: 3px solid white;
+          width: 24px;
+          height: 24px;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        .error-state {
+          padding: 20px;
+          text-align: center;
+          color: #EF4444;
+        }
+      `;
+      
+      // Create container
+      const container = document.createElement('div');
+      container.className = 'widget-container';
+      
+      // Create button with loading state
+      const button = document.createElement('button');
+      button.className = 'widget-button';
+      button.innerHTML = '<div class="loader"></div>';
+      button.setAttribute('aria-label', 'Open chat widget');
+      container.appendChild(button);
+      
+      // Create iframe container (hidden initially)
+      const frame = document.createElement('iframe');
+      frame.className = 'widget-frame';
+      frame.setAttribute('title', 'AI Chat Widget');
+      frame.setAttribute('frameborder', '0');
+      container.appendChild(frame);
+      
+      // Append to shadow DOM
+      this.shadowRoot.appendChild(style);
+      this.shadowRoot.appendChild(container);
+      
+      // Save references
+      this.container = container;
+      this.button = button;
+      this.frame = frame;
     }
-    if (
-      /Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(
-        ua,
-      )
-    ) {
-      return "mobile";
+    
+    async loadWidgetConfig() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/public/widgets/${this.widgetId}/config`);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to load widget configuration: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status !== 'success') {
+          throw new Error(data.message || 'Failed to load widget configuration');
+        }
+        
+        this.config = data.data;
+        this.applyWidgetStyles();
+        
+        return this.config;
+      } catch (error) {
+        console.error('Error loading widget config:', error);
+        throw error;
+      }
     }
-    return "desktop";
-  }
-
-  _setupMediaQueryListeners() {
-    // Listen for device orientation changes
-    this._mediaQueryList = window.matchMedia("(orientation: portrait)");
-
-    const handleOrientationChange = (e) => {
-      // Adjust widget size and position based on orientation
-      this._updateWidgetForOrientation(e.matches);
-    };
-
-    // Use the appropriate event listener based on browser support
-    if (this._mediaQueryList.addEventListener) {
-      this._mediaQueryList.addEventListener("change", handleOrientationChange);
-    } else if (this._mediaQueryList.addListener) {
-      // Fallback for older browsers
-      this._mediaQueryList.addListener(handleOrientationChange);
+    
+    async createChatSession() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/public/widgets/${this.widgetId}/sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to create chat session: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status !== 'success') {
+          throw new Error(data.message || 'Failed to create chat session');
+        }
+        
+        this.sessionId = data.data.session_id;
+        localStorage.setItem(`${STORAGE_PREFIX}session_${this.widgetId}`, this.sessionId);
+        
+        return this.sessionId;
+      } catch (error) {
+        console.error('Error creating chat session:', error);
+        throw error;
+      }
     }
-
-    // Initial check
-    handleOrientationChange(this._mediaQueryList);
-  }
-
-  _updateWidgetForOrientation(isPortrait) {
-    const iframe = this.shadowRoot.querySelector("iframe");
-    if (!iframe) return;
-
-    if (this._deviceType === "mobile") {
-      if (isPortrait) {
-        iframe.style.maxWidth = "100%";
-        iframe.style.height = "70vh";
+    
+    applyWidgetStyles() {
+      if (!this.config || !this.config.visual_settings) return;
+      
+      const visual = this.config.visual_settings;
+      const style = document.createElement('style');
+      
+      // Apply colors
+      style.textContent = `
+        :host {
+          --primary-color: ${visual.colors.primary};
+          --secondary-color: ${visual.colors.secondary};
+          --background-color: ${visual.colors.background};
+          --text-color: ${visual.colors.text};
+          --border-radius: ${visual.style === 'rounded' ? '12px' : visual.style === 'square' ? '4px' : '8px'};
+        }
+        
+        .widget-frame {
+          width: ${visual.width};
+          height: ${visual.height};
+          ${this.getPositionStyles(visual.position)}
+        }
+        
+        .widget-container {
+          ${this.getPositionStyles(visual.position, true)}
+        }
+      `;
+      
+      this.shadowRoot.appendChild(style);
+    }
+    
+    getPositionStyles(position, forButton = false) {
+      const offset = forButton ? '20px' : '100px';
+      
+      switch (position) {
+        case 'bottom-left':
+          return `bottom: 20px; left: 20px; right: auto;`;
+        case 'top-right':
+          return `top: 20px; right: 20px; bottom: auto;`;
+        case 'top-left':
+          return `top: 20px; left: 20px; right: auto; bottom: auto;`;
+        case 'bottom-right':
+        default:
+          return `bottom: 20px; right: 20px;`;
+      }
+    }
+    
+    renderWidgetButton() {
+      if (!this.config) return;
+      
+      // Update button with proper icon
+      this.button.innerHTML = `
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM16 12.25H13V16.75H11V12.25H8V10.75H11V7.25H13V10.75H16V12.25Z" fill="white"/>
+        </svg>
+      `;
+    }
+    
+    renderErrorState() {
+      this.button.innerHTML = `
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="white"/>
+        </svg>
+      `;
+      
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error-state';
+      errorDiv.textContent = 'Unable to load chat widget. Please try again later.';
+      this.container.appendChild(errorDiv);
+    }
+    
+    loadChatInterface() {
+      // Set the iframe source with the widget and session IDs
+      const url = `${FRONTEND_URL}/chat-embed?widgetId=${this.widgetId}&sessionId=${this.sessionId}`;
+      this.frame.setAttribute('src', url);
+      this.isLoaded = true;
+    }
+    
+    toggleWidget() {
+      this.isOpen = !this.isOpen;
+      
+      if (this.isOpen) {
+        this.frame.classList.add('open');
+        this.button.innerHTML = `
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="white"/>
+          </svg>
+        `;
+        
+        // Load the chat interface if not already loaded
+        if (!this.isLoaded) {
+          this.loadChatInterface();
+        }
       } else {
-        iframe.style.maxWidth = "60%";
-        iframe.style.height = "90vh";
+        this.frame.classList.remove('open');
+        this.renderWidgetButton();
       }
     }
-  }
-
-  _validateOrigin() {
-    // Security: Validate the origin of the embedding page
-    const embedOrigin = window.location.origin;
-    const allowedOrigins = [
-      // List of allowed origins can be dynamically loaded from server
-      // For now, we'll allow the current origin and common development origins
-      embedOrigin,
-      "https://localhost:3000",
-      "https://localhost:5173",
-      "https://127.0.0.1:5173",
-    ];
-
-    // Check if current origin is allowed
-    const isAllowedOrigin =
-      allowedOrigins.includes(embedOrigin) ||
-      embedOrigin.endsWith(".tempolabs.ai") ||
-      embedOrigin.startsWith("https://");
-
-    if (!isAllowedOrigin) {
-      console.warn(
-        "Chat widget embedded on potentially insecure origin:",
-        embedOrigin,
-      );
-      // We don't block the widget, but we add a warning class
-      this.classList.add("insecure-origin");
-    }
-
-    return isAllowedOrigin;
-  }
-
-  _logEmbedding() {
-    // Optional: Send anonymous analytics about embedding
-    try {
-      const widgetId = this.getAttribute("widget-id") || "default";
-      const embedUrl = window.location.hostname;
-      const browserInfo = {
-        userAgent: navigator.userAgent,
-        deviceType: this._deviceType,
-        viewport: {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        },
-        isSecureContext: window.isSecureContext,
-      };
-
-      // Use sendBeacon if available for non-blocking analytics
-      if (navigator.sendBeacon) {
-        const baseUrl = window.location.origin;
-        const analyticsUrl = `${baseUrl}/api/widget-analytics`;
-        const data = new FormData();
-        data.append("widgetId", widgetId);
-        data.append("embedUrl", embedUrl);
-        data.append("event", "embed");
-        data.append("browserInfo", JSON.stringify(browserInfo));
-        navigator.sendBeacon(analyticsUrl, data);
-      }
-    } catch (e) {
-      // Silently fail analytics - should not affect widget functionality
-    }
-  }
-
-  render() {
-    // Get attributes with defaults
-    const title = this.getAttribute("title") || "Chat Assistant";
-    const subtitle = this.getAttribute("subtitle") || "Ask me anything";
-    const position = this.getAttribute("position") || "bottom-right";
-    const contextMode = this.getAttribute("context-mode") || "general";
-    const contextRuleId = this.getAttribute("context-rule-id") || "";
-    const avatarSrc = this.getAttribute("avatar-src") || "";
-    const widgetId = this.getAttribute("widget-id") || "";
-    const color = this.getAttribute("color") || "";
-    const size = this.getAttribute("size") || "medium";
-    const theme = this.getAttribute("theme") || "light";
-    const autoOpen = this.getAttribute("auto-open") === "true";
-
-    // Create iframe with parameters
-    const iframe = document.createElement("iframe");
-    const baseUrl = window.location.origin;
-    let url = `${baseUrl}/chat-embed?`;
-    url += `title=${encodeURIComponent(title)}`;
-    url += `&subtitle=${encodeURIComponent(subtitle)}`;
-    url += `&position=${encodeURIComponent(position)}`;
-    url += `&contextMode=${encodeURIComponent(contextMode)}`;
-    url += `&deviceType=${encodeURIComponent(this._deviceType)}`;
-
-    if (contextRuleId) {
-      url += `&contextRuleId=${encodeURIComponent(contextRuleId)}`;
-    }
-
-    if (avatarSrc) {
-      url += `&avatarSrc=${encodeURIComponent(avatarSrc)}`;
-    }
-
-    if (widgetId) {
-      url += `&widgetId=${encodeURIComponent(widgetId)}`;
-    }
-
-    if (color) {
-      url += `&color=${encodeURIComponent(color)}`;
-    }
-
-    if (size) {
-      url += `&size=${encodeURIComponent(size)}`;
-    }
-
-    if (theme) {
-      url += `&theme=${encodeURIComponent(theme)}`;
-    }
-
-    if (autoOpen) {
-      url += `&autoOpen=true`;
-    }
-
-    // Add referrer information for security validation
-    url += `&embedOrigin=${encodeURIComponent(window.location.origin)}`;
-    url += `&timestamp=${Date.now()}`; // Prevent caching issues
-
-    // Security: Add a CSRF token if available
-    const csrfToken = this._getCsrfToken();
-    if (csrfToken) {
-      url += `&csrfToken=${encodeURIComponent(csrfToken)}`;
-    }
-
-    iframe.src = url;
-    iframe.style.border = "none";
-    iframe.style.width = "100%";
-    iframe.style.height = "100%";
-    iframe.style.minHeight = this._deviceType === "mobile" ? "500px" : "600px";
-    iframe.style.maxHeight = this._deviceType === "mobile" ? "600px" : "800px";
-    iframe.style.borderRadius = "12px";
-    iframe.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15)";
-    iframe.style.backgroundColor = "white";
-    iframe.style.transition = "all 0.3s ease";
-    iframe.allow = "microphone; camera";
-    iframe.title = "Chat Widget";
-    iframe.setAttribute("loading", "lazy");
-    iframe.setAttribute("importance", "low");
-    iframe.setAttribute(
-      "sandbox",
-      "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox",
-    );
-    iframe.setAttribute("referrerpolicy", "origin");
-
-    // Add responsive class based on size and device type
-    iframe.classList.add(`chat-widget-${size}`);
-    iframe.classList.add(`chat-widget-${this._deviceType}`);
-
-    // Create and append stylesheet for iframe
-    const style = document.createElement("style");
-    style.textContent = `
-      :host {
-        display: block;
-        width: 100%;
-        height: 100%;
-        min-height: ${this._deviceType === "mobile" ? "500px" : "600px"};
-        max-height: ${this._deviceType === "mobile" ? "600px" : "800px"};
-      }
+    
+    addEventListeners() {
+      this.button.addEventListener('click', () => {
+        this.toggleWidget();
+      });
       
-      iframe {
-        transition: opacity 0.3s ease, transform 0.3s ease;
-      }
-      
-      iframe.loading {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      
-      .chat-widget-small {
-        max-width: 300px;
-      }
-      
-      .chat-widget-medium {
-        max-width: 380px;
-      }
-      
-      .chat-widget-large {
-        max-width: 450px;
-      }
-      
-      .chat-widget-compact {
-        min-height: 400px !important;
-      }
-      
-      .chat-widget-mobile {
-        max-width: 100% !important;
-      }
-      
-      .chat-widget-tablet {
-        max-width: 450px;
-      }
-      
-      @media (max-width: 480px) {
-        :host {
-          width: 100% !important;
-          min-height: 500px;
-        }
+      // Handle messages from iframe
+      window.addEventListener('message', (event) => {
+        // Verify origin for security
+        if (event.origin !== FRONTEND_URL) return;
         
-        iframe {
-          width: 100% !important;
-          min-height: 500px;
-          border-radius: 0 !important;
-        }
-      }
-      
-      @media (max-width: 768px) and (orientation: landscape) {
-        :host {
-          height: 90vh;
-          min-height: 300px;
-        }
+        const { action, payload } = event.data;
         
-        iframe {
-          height: 90vh;
-          min-height: 300px;
-        }
-      }
-      
-      /* Dark mode support */
-      @media (prefers-color-scheme: dark) {
-        iframe {
-          background-color: #1a1a1a;
-        }
-      }
-      
-      /* High contrast mode support */
-      @media (forced-colors: active) {
-        iframe {
-          border: 2px solid CanvasText;
-        }
-      }
-      
-      /* Reduced motion preference */
-      @media (prefers-reduced-motion: reduce) {
-        iframe {
-          transition: opacity 0.1s ease;
-        }
-      }
-    `;
-
-    // Add loading class initially
-    iframe.classList.add("loading");
-
-    // Handle iframe load event
-    iframe.onload = () => {
-      iframe.classList.remove("loading");
-
-      // Set up message event listener for cross-frame communication
-      window.addEventListener("message", (event) => {
-        // Verify the origin for security
-        if (event.origin !== baseUrl) return;
-
-        // Handle messages from the iframe
-        if (event.data && event.data.type === "chat-widget-event") {
-          // Dispatch custom event that can be listened to by the embedding page
-          const customEvent = new CustomEvent("chat-widget-event", {
-            detail: event.data,
-            bubbles: true,
-            composed: true,
-          });
-
-          this.dispatchEvent(customEvent);
+        switch (action) {
+          case 'close-widget':
+            this.toggleWidget();
+            break;
+          case 'widget-loaded':
+            // Iframe is fully loaded
+            break;
+          // Add more message handlers as needed
         }
       });
-
-      // Notify iframe of current size
-      this._notifyIframeOfResize(this.clientWidth, this.clientHeight);
-    };
-
-    // Clear and append
-    this.shadowRoot.innerHTML = "";
-    this.shadowRoot.appendChild(style);
-    this.shadowRoot.appendChild(iframe);
-  }
-
-  _getCsrfToken() {
-    // Try to get CSRF token from meta tag or cookies
-    const metaTag = document.querySelector('meta[name="csrf-token"]');
-    if (metaTag) {
-      return metaTag.getAttribute("content");
     }
-
-    // Fallback: try to get from cookies
-    const cookies = document.cookie.split(";");
-    for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i].trim();
-      if (cookie.startsWith("XSRF-TOKEN=")) {
-        return cookie.substring("XSRF-TOKEN=".length, cookie.length);
-      }
-    }
-
-    return null;
   }
-}
-
-// Define the custom element
-if (!customElements.get("chat-widget")) {
-  customElements.define("chat-widget", ChatWidgetElement);
-}
+  
+  // Register the web component
+  customElements.define('ai-chat-widget', AIChatWidget);
+})();

@@ -311,6 +311,7 @@ class KnowledgeBaseController extends Controller
         $validator = Validator::make($request->all(), [
             'limit' => 'nullable|integer|min:1|max:50',
             'min_similarity_score' => 'nullable|numeric|min:0|max:1',
+            'use_vectors' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -319,12 +320,14 @@ class KnowledgeBaseController extends Controller
 
         $limit = $request->input('limit', 5);
         $minSimilarityScore = $request->input('min_similarity_score');
+        $useVectors = $request->input('use_vectors', true);
 
         return $this->knowledgeBaseService->findSimilarEntries(
             Auth::user(),
             $entryId,
             (int)$limit,
-            $minSimilarityScore
+            $minSimilarityScore,
+            $useVectors
         );
     }
 
@@ -372,5 +375,73 @@ class KnowledgeBaseController extends Controller
             Auth::user(),
             $knowledgeBaseId
         );
+    }
+
+    /**
+     * Advanced search across knowledge bases with multiple filtering options.
+     * 
+     * This method supports hybrid search combining vector and keyword search,
+     * filtering by entry types, tags, and other metadata.
+     */
+    public function advancedSearch(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'query' => 'required|string|min:2',
+            'knowledge_base_ids' => 'nullable|array',
+            'knowledge_base_ids.*' => 'string|uuid',
+            'search_mode' => 'nullable|string|in:hybrid,vector,keyword',
+            'min_similarity' => 'nullable|numeric|min:0|max:1',
+            'limit' => 'nullable|integer|min:1|max:100',
+            'filters' => 'nullable|array',
+            'filters.entry_types' => 'nullable|array',
+            'filters.entry_types.*' => 'string|in:text,html,pdf,image',
+            'filters.tags' => 'nullable|array',
+            'filters.tags.*' => 'string',
+            'filters.exclude_chunks' => 'nullable|boolean',
+            'filters.only_chunks' => 'nullable|boolean',
+            'filters.parent_entry_id' => 'nullable|string|uuid',
+            'include_metadata' => 'nullable|boolean',
+            'vector_weight' => 'nullable|integer|min:0|max:100',
+            'keyword_weight' => 'nullable|integer|min:0|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Get parameters
+        $searchParams = [
+            'query' => $request->input('query'),
+            'knowledge_base_ids' => $request->input('knowledge_base_ids'),
+            'search_mode' => $request->input('search_mode', 'hybrid'),
+            'min_similarity' => $request->input('min_similarity', 0.7),
+            'limit' => $request->input('limit', 20),
+            'filters' => $request->input('filters', []),
+            'include_metadata' => $request->input('include_metadata', false),
+            'vector_weight' => $request->input('vector_weight'),
+            'keyword_weight' => $request->input('keyword_weight'),
+        ];
+
+        // Pass to service method
+        return $this->knowledgeBaseService->advancedSearch(
+            Auth::user(),
+            $searchParams
+        );
+    }
+
+    /**
+     * Get stats and analytics for a knowledge base.
+     */
+    public function getStats(string $id): JsonResponse
+    {
+        return $this->knowledgeBaseService->getKnowledgeBaseStats(Auth::user(), $id);
+    }
+
+    /**
+     * Generate keyword highlights for an entry
+     */
+    public function generateKeywordHighlights(string $entryId): JsonResponse
+    {
+        return $this->knowledgeBaseService->generateKeywordHighlights(Auth::user(), $entryId);
     }
 }
