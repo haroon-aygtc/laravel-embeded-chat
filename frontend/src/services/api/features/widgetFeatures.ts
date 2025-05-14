@@ -151,18 +151,26 @@ export interface CreateChatSessionResponse {
 
 export const widgetService = {
   /**
-   * Get all widgets with optional filtering
+   * Get all widgets with pagination and filtering
    */
   async getWidgets(
     page = 1, 
     perPage = 10, 
     filters: { name?: string; is_active?: boolean } = {}
   ): Promise<WidgetsResponse> {
-    const params = new URLSearchParams({
-      page: page.toString(),
-      per_page: perPage.toString(),
-      ...filters
-    });
+    const params = new URLSearchParams();
+    
+    // Add pagination params
+    params.append('page', page.toString());
+    params.append('per_page', perPage.toString());
+    
+    // Add optional filters
+    if (filters.name) {
+      params.append('name', filters.name);
+    }
+    if (filters.is_active !== undefined) {
+      params.append('is_active', filters.is_active.toString());
+    }
     
     const response = await axios.get(`${WIDGET_ENDPOINTS.getAllWidgets}?${params.toString()}`);
     return response.data;

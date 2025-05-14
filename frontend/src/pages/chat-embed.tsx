@@ -1,17 +1,19 @@
-"use client";
-
 import React, { useEffect, useState } from "react";
-import { widgetClientService, WidgetConfig, ChatSession, ChatMessage } from "@/services/widgetClientService";
-import { ChatWidget } from "@/components/chat/ChatWidget";
-import { useSearchParams } from "react-router-dom";
+import { widgetClientService, WidgetConfig, ChatSession } from "@/services/widgetClientService";
+import ChatWidget from "@/components/chat/ChatWidget";
 
-// Use the ChatMessage type from widgetClientService but with a role property for compatibility
-interface Message extends Omit<ChatMessage, 'type'> {
-  role: 'user' | 'assistant' | 'system';
+
+interface Message {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  created_at: string;
 }
 
 const ChatEmbedPage: React.FC = () => {
-  const [searchParams] = useSearchParams();
+
+  
+  const searchParams = new URLSearchParams(window.location.search);
   const widgetId = searchParams.get('widgetId');
   const sessionId = searchParams.get('sessionId');
 
@@ -39,7 +41,7 @@ const ChatEmbedPage: React.FC = () => {
         // Create or use existing session
         let session: ChatSession;
         if (sessionId && typeof sessionId === 'string') {
-          session = { session_id: sessionId, widget_id: widgetId, created_at: new Date().toISOString() };
+          session = { session_id: sessionId, name: 'Embedded Chat' };
         } else {
           session = await widgetClientService.createChatSession(widgetId);
         }
@@ -65,20 +67,14 @@ const ChatEmbedPage: React.FC = () => {
   // Load messages for the session
   const loadMessages = async (sessionId: string) => {
     try {
-      const messages = await widgetClientService.getMessages(sessionId);
-
-      // Sort messages by creation date (oldest first)
-      const sortedMessages = messages.sort((a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-
-      // Convert ChatMessage to Message (with role instead of type)
-      const formattedMessages: Message[] = sortedMessages.map(msg => ({
-        ...msg,
-        role: msg.type === 'user' ? 'user' : msg.type === 'ai' ? 'assistant' : 'system'
-      }));
-
-      setMessages(formattedMessages);
+      const response = await widgetClientService.getMessages(sessionId);
+      if (response.status === 'success') {
+        // Sort messages by creation date (oldest first)
+        const sortedMessages = response.data.data.sort((a: Message, b: Message) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        setMessages(sortedMessages);
+      }
     } catch (err) {
       console.error('Error loading messages:', err);
     }
@@ -96,7 +92,6 @@ const ChatEmbedPage: React.FC = () => {
         id: 'temp-' + Date.now(),
         content,
         role: 'user',
-        session_id: chatSession.session_id,
         created_at: new Date().toISOString()
       };
 
@@ -105,26 +100,17 @@ const ChatEmbedPage: React.FC = () => {
       // Send to API
       const response = await widgetClientService.sendMessage(chatSession.session_id, content);
 
-      // Convert API response to Message format
-      const userMessage: Message = {
-        ...response.userMessage,
-        role: 'user'
-      };
-
-      const aiMessage: Message = {
-        ...response.aiMessage,
-        role: 'assistant'
-      };
-
-      // Replace temp message with real one and add AI response
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== tempUserMessage.id);
-        return [
-          ...filtered,
-          userMessage,
-          aiMessage
-        ];
-      });
+      if (response.status === 'success') {
+        // Replace temp message with real one and add AI response
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempUserMessage.id);
+          return [
+            ...filtered,
+            response.data.user_message,
+            response.data.ai_message
+          ];
+        });
+      }
     } catch (err) {
       console.error('Error sending message:', err);
       // Remove temp message on error
@@ -179,25 +165,11 @@ const ChatEmbedPage: React.FC = () => {
         <ChatWidget
           title={widgetConfig.title || 'Chat'}
           subtitle={widgetConfig.subtitle || null}
-          // Convert our Message type to ChatMessage type expected by ChatWidget
-          messages={messages.map(msg => ({
-            id: msg.id,
-            session_id: msg.session_id,
-            content: msg.content,
-            type: msg.role === 'user' ? 'user' : msg.role === 'assistant' ? 'ai' : 'system',
-            created_at: msg.created_at,
-            metadata: msg.metadata
-          }))}
           onSendMessage={sendMessage}
           onClose={handleClose}
-          isLoading={sending}
-          // Use only the props that are actually needed by ChatWidget
-          primaryColor={widgetConfig.visual_settings?.colors?.primary || '#4f46e5'}
-          position={widgetConfig.visual_settings?.position || 'bottom-right'}
-          allowAttachments={widgetConfig.behavioral_settings?.allowAttachments || false}
-          allowEmoji={widgetConfig.behavioral_settings?.allowEmoji || true}
-          embedded={true}
-        />
+          visualSettings={widgetConfig.visual_settings}
+          contentSettings={widgetConfig.content_settings}
+          embedded={true} config={undefined} widgetId={undefined} isFullPage={undefined} position={undefined} contextMode={undefined} contextName={undefined} contextRuleId={undefined} primaryColor={undefined} avatarSrc={undefined} initiallyOpen={undefined} allowAttachments={undefined} allowVoice={undefined} allowEmoji={undefined} width={undefined} height={undefined} messages={undefined} isLoading={undefined}        />
       )}
     </div>
   );

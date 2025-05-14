@@ -19,7 +19,7 @@ return new class extends Migration
             $table->json('variables')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_public')->default(false);
-            $table->foreignUuid('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->json('metadata')->nullable();
             $table->timestamps();
         });

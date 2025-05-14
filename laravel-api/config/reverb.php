@@ -30,8 +30,8 @@ return [
 
         'reverb' => [
             'host' => env('REVERB_SERVER_HOST', '0.0.0.0'),
-            'port' => env('REVERB_SERVER_PORT', 8080),
-            'path' => env('REVERB_SERVER_PATH', ''),
+            'port' => env('REVERB_SERVER_PORT', 3001),
+            'path' => env('REVERB_SERVER_PATH', '/app'),
             'hostname' => env('REVERB_HOST'),
             'options' => [
                 'tls' => [],
@@ -73,15 +73,9 @@ return [
 
         'apps' => [
             [
-                'key' => env('REVERB_APP_KEY'),
-                'secret' => env('REVERB_APP_SECRET'),
-                'app_id' => env('REVERB_APP_ID'),
-                'options' => [
-                    'host' => env('REVERB_HOST'),
-                    'port' => env('REVERB_PORT', 443),
-                    'scheme' => env('REVERB_SCHEME', 'https'),
-                    'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
-                ],
+                'id' => env('REVERB_APP_ID', 'laravel-chat-app'),
+                'key' => env('REVERB_APP_KEY', 'laravel-chat-key'),
+                'secret' => env('REVERB_APP_SECRET', 'laravel-chat-secret'),
                 'allowed_origins' => ['*'],
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
@@ -90,5 +84,37 @@ return [
         ],
 
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Presets
+    |--------------------------------------------------------------------------
+    |
+    | These are the presets for how clients might connect to Reverb.
+    | This is where maximum connection counts can be defined. The default
+    | is set to "reverb", but you can add as many as you'd like.
+    |
+    */
+
+    'presets' => [
+        'reverb' => [
+            'capacity' => 200,
+            'connection_timeout' => 10,
+            'ping_timeout' => 30,
+            'read_timeout' => 15,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Channel Cache Driver
+    |--------------------------------------------------------------------------
+    |
+    | This defines the cache driver that will be used to store presence channel
+    | member information.
+    |
+    */
+
+    'cache_driver' => env('REVERB_CACHE_DRIVER', env('CACHE_DRIVER', 'file')),
 
 ];

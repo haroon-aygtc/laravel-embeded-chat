@@ -50,7 +50,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 
 const KnowledgeBaseManager = () => {
-  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseConfig[]>(
+  const [knowledgeBases, setKnowledgeBases] = useState<ServiceKnowledgeBaseConfig[]>(
     [],
   );
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
@@ -65,7 +65,7 @@ const KnowledgeBaseManager = () => {
   const { toast } = useToast();
 
   // Form state
-  const [formData, setFormData] = useState<Partial<KnowledgeBaseConfig>>({
+  const [formData, setFormData] = useState<Partial<ServiceKnowledgeBaseConfig>>({
     name: "",
     source_type: "api",
     metadata: {
@@ -84,13 +84,52 @@ const KnowledgeBaseManager = () => {
   }, []);
 
   const fetchKnowledgeBases = async () => {
+    console.log("Fetching knowledge bases...");
     setLoading(true);
     try {
-      const kbs = await knowledgeBaseService.getAllConfigs();
-      setKnowledgeBases(kbs);
-      if (kbs.length > 0 && !selectedKbId) {
-        setSelectedKbId(kbs[0].id);
-        setFormData(kbs[0]);
+      const kbs = await knowledgeBaseService.getKnowledgeBaseConfigsForRules();
+
+      // Data validation to ensure kbs is an array
+      if (!Array.isArray(kbs)) {
+        console.error("Invalid knowledge bases data format:", kbs);
+        toast({
+          title: "Data Error",
+          description: "Received invalid knowledge base data format",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Convert KnowledgeBaseForContextRule to KnowledgeBaseConfig
+      const convertedKbs = kbs.map(kb => ({
+        id: kb.id,
+        name: kb.name,
+        type: kb.source_type as any,
+        endpoint: "",
+        apiKey: "",
+        connectionString: "",
+        refreshInterval: 60,
+        parameters: {},
+        isActive: true, // Default to active
+        createdAt: "",
+        updatedAt: "",
+        lastSyncedAt: "",
+      }));
+
+      // Sort knowledge bases alphabetically by name
+      const sortedKbs = [...convertedKbs].sort((a, b) =>
+        a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+      );
+
+      console.log(`Successfully fetched ${sortedKbs.length} knowledge bases`);
+
+      // Set the state with the sorted array
+      setKnowledgeBases(sortedKbs);
+
+      // Select the first knowledge base if none is selected
+      if (sortedKbs.length > 0 && !selectedKbId) {
+        setSelectedKbId(sortedKbs[0].id);
+        setFormData(sortedKbs[0]);
       }
     } catch (error) {
       console.error("Error fetching knowledge bases:", error);
@@ -99,6 +138,8 @@ const KnowledgeBaseManager = () => {
         description: "Failed to fetch knowledge bases",
         variant: "destructive",
       });
+      // Set empty array on error to avoid undefined state
+      setKnowledgeBases([]);
     } finally {
       setLoading(false);
     }
@@ -220,7 +261,23 @@ const KnowledgeBaseManager = () => {
             title: "Success",
             description: "Knowledge base created successfully",
           });
-          setKnowledgeBases((prev) => [...prev, newKb]);
+          // Ensure newKb is of the correct type before adding to state
+          // Convert to the component's expected ServiceKnowledgeBaseConfig format
+          const typedNewKb: ServiceKnowledgeBaseConfig = {
+            id: newKb.id,
+            name: newKb.name,
+            type: (newKb.source_type || "api") as any,
+            endpoint: "",
+            apiKey: "",
+            connectionString: "",
+            refreshInterval: 60,
+            parameters: {},
+            isActive: true,
+            createdAt: newKb.created_at || "",
+            updatedAt: newKb.updated_at || "",
+            lastSyncedAt: "",
+          };
+          setKnowledgeBases((prev) => [...prev, typedNewKb]);
           setSelectedKbId(newKb.id);
           setFormData(newKb);
           setIsCreating(false);
@@ -236,8 +293,24 @@ const KnowledgeBaseManager = () => {
             title: "Success",
             description: "Knowledge base updated successfully",
           });
+          // Convert updatedKb to the expected format
+          const typedUpdatedKb: ServiceKnowledgeBaseConfig = {
+            id: updatedKb.id,
+            name: updatedKb.name,
+            type: (updatedKb.source_type || "api") as any,
+            endpoint: "",
+            apiKey: "",
+            connectionString: "",
+            refreshInterval: 60,
+            parameters: {},
+            isActive: true,
+            createdAt: updatedKb.created_at || "",
+            updatedAt: updatedKb.updated_at || "",
+            lastSyncedAt: "",
+          };
+
           setKnowledgeBases((prev) =>
-            prev.map((kb) => (kb.id === selectedKbId ? updatedKb : kb)),
+            prev.map((kb) => (kb.id === selectedKbId ? typedUpdatedKb : kb)),
           );
           setFormData(updatedKb);
           setIsEditing(false);
@@ -310,8 +383,10 @@ const KnowledgeBaseManager = () => {
 
     setIsSyncing(true);
     try {
-      const success =
-        await knowledgeBaseService.syncKnowledgeBase(selectedKbId);
+      // Import the syncKnowledgeBase function directly from the API module
+      const { syncKnowledgeBase } = await import("@/services/api/features/knowledgeBase");
+
+      const success = await syncKnowledgeBase(selectedKbId);
       if (success) {
         toast({
           title: "Success",
@@ -352,11 +427,15 @@ const KnowledgeBaseManager = () => {
     setTestResults(null);
 
     try {
-      const results = await knowledgeBaseService.query({
+      // Import the query function directly from the API module
+      const { query } = await import("@/services/api/features/knowledgeBase");
+
+      const results = await query({
         query: testQuery,
-        limit: 5,
+        maxResults: 5,
         contextRuleId: undefined,
         userId: "test-user",
+        knowledgeBaseIds: selectedKbId ? [selectedKbId] : undefined
       });
 
       setTestResults(results);

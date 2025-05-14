@@ -8,7 +8,7 @@
 import logger from "@/utils/logger";
 import { api } from "./api/middleware/apiMiddleware";
 import { User, CreateUserDTO } from "@/types";
-import { activityApi } from "./api";
+import { userApi } from "./api/features/user";
 
 export interface UserListResponse {
   users: User[];
@@ -76,7 +76,8 @@ export const getUserActivity = async (userId: string): Promise<any[]> => {
     if (!token) {
       throw new Error("Authentication required");
     }
-    return await activityApi.getByUserId(userId, token);
+    const response = await userApi.getUserActivity(userId);
+    return response.success && response.data ? response.data.activities : [];
   } catch (error) {
     logger.error(`Error in getUserActivity for user ${userId}:`, error);
     return [];

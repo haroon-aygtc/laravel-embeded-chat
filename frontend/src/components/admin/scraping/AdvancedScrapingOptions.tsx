@@ -234,7 +234,7 @@ const AdvancedScrapingOptions: React.FC<AdvancedScrapingOptionsProps> = ({
                 id="proxy-url"
                 value={config.proxyUrl}
                 onChange={(e) => handleInputChange("proxyUrl", e.target.value)}
-                placeholder="http://username:password@proxy.example.com:8000"
+                placeholder="http://username:password@proxy.example.com:3000"
               />
             </div>
           )}

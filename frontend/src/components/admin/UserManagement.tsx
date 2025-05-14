@@ -73,7 +73,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import type { User, CreateUserDTO } from "@/types";
 import { getUsers, createUser, updateUser, deleteUser, getUserActivity } from "@/services/userService";
-import { activityApi } from "@/services/api";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -293,19 +292,9 @@ export default function UserManagement() {
     if (!selectedUser) return;
 
     try {
-      const token = sessionStorage.getItem('token');
-      if (!token) {
-        toast({
-          title: "Authentication Error",
-          description: "You need to be logged in to view user activity.",
-          variant: "destructive",
-        });
-        return;
-      }
+      const activity = await getUserActivity(selectedUser.id);
 
-      const activity = await activityApi.getByUserId(selectedUser.id, token);
-
-      if (activity) {
+      if (activity && activity.length > 0) {
         setUserActivity(activity);
       } else {
         setUserActivity([]);

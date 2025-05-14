@@ -4,13 +4,9 @@
  * This module provides functionality for WebSocket communication.
  */
 
-import {
-  ConnectionState,
-  WebSocketConfig,
-  WebSocketStats,
-} from "@/types/websocket";
-import { env } from "@/config/env";
-import logger from "@/utils/logger";
+import { ConnectionState, WebSocketConfig, WebSocketStats } from "../../../types/websocket";
+import { WS_BASE_URL, WS_PORT } from "../../../config/api";
+import logger from "../../../utils/logger";
 
 // WebSocket message types
 export enum MessageType {
@@ -67,9 +63,9 @@ export class WebSocketService {
 
     // Default configuration
     this.config = {
-      url: env.WS_PORT
-        ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:${env.WS_PORT}`
-        : "ws://localhost:8000",
+      url: WS_PORT
+        ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:${WS_PORT}`
+        : WS_BASE_URL,
       autoReconnect: true,
       maxReconnectAttempts: 5,
       heartbeatIntervalMs: 30000,
@@ -125,7 +121,7 @@ export class WebSocketService {
           this.startHeartbeat();
 
           // Notify all connect callbacks
-          this.connectCallbacks.forEach((callback) => callback());
+          this.connectCallbacks.forEach(callback => callback());
 
           if (this.config.debug) {
             logger.info("WebSocket connected");
@@ -134,13 +130,13 @@ export class WebSocketService {
           resolve();
         };
 
-        this.socket.onmessage = (event) => {
+        this.socket.onmessage = event => {
           try {
             const data = JSON.parse(event.data);
             this.lastMessageTimestamp = Date.now();
 
             // Notify all message handlers
-            this.messageHandlers.forEach((handler) => handler(data));
+            this.messageHandlers.forEach(handler => handler(data));
 
             if (this.config.debug) {
               logger.info("WebSocket message received", { extra: data });
@@ -150,7 +146,7 @@ export class WebSocketService {
           }
         };
 
-        this.socket.onclose = (event) => {
+        this.socket.onclose = event => {
           clearTimeout(connectionTimeout);
           if (this.connectionState !== ConnectionState.FAILED) {
             this.connectionState = ConnectionState.DISCONNECTED;
@@ -158,7 +154,7 @@ export class WebSocketService {
           this.stopHeartbeat();
 
           // Notify all disconnect callbacks
-          this.disconnectCallbacks.forEach((callback) => callback());
+          this.disconnectCallbacks.forEach(callback => callback());
 
           if (this.config.debug) {
             logger.info(
@@ -168,7 +164,7 @@ export class WebSocketService {
 
           this.handleReconnect();
 
-          if (this.connectionState === ConnectionState.CONNECTING) {
+          if (this.connectionState ===  ConnectionState.CONNECTING) {
             reject(
               new Error(
                 `WebSocket closed during connection: ${event.code} ${event.reason}`,
@@ -177,11 +173,10 @@ export class WebSocketService {
           }
         };
 
-        this.socket.onerror = (error) => {
+        this.socket.onerror = error => {
           logger.error("WebSocket error", error);
           if (this.connectionState === ConnectionState.CONNECTING) {
             clearTimeout(connectionTimeout);
-            this.connectionState = ConnectionState.FAILED;
             this.socket?.close();
             this.socket = null;
             this.handleReconnect();
@@ -505,7 +500,7 @@ export class WebSocketService {
     // This is a client-side implementation, so this method does nothing
     // It's included for API compatibility with the server-side implementation
     logger.warn("onMessage method called on client-side WebSocket service");
-    return () => {};
+    return () => { };
   }
 
   /**
@@ -517,7 +512,7 @@ export class WebSocketService {
     // This is a client-side implementation, so this method does nothing
     // It's included for API compatibility with the server-side implementation
     logger.warn("onConnection method called on client-side WebSocket service");
-    return () => {};
+    return () => { };
   }
 
   /**
@@ -531,7 +526,7 @@ export class WebSocketService {
     logger.warn(
       "onDisconnection method called on client-side WebSocket service",
     );
-    return () => {};
+    return () => { };
   }
 }
 

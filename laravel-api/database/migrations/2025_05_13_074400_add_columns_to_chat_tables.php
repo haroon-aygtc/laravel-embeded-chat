@@ -13,8 +13,7 @@ return new class extends Migration
     {
         // Add columns to chat_sessions table
         Schema::table('chat_sessions', function (Blueprint $table) {
-            $table->string('widget_id')->nullable()->after('context_mode');
-            $table->boolean('is_active')->default(true)->after('widget_id');
+            $table->boolean('status')->default(true)->after('widget_id');
             $table->timestamp('last_message_at')->nullable()->after('is_active');
             $table->integer('message_count')->default(0)->after('last_message_at');
             $table->integer('unread_count')->default(0)->after('message_count');
@@ -38,8 +37,7 @@ return new class extends Migration
         // Remove columns from chat_sessions table
         Schema::table('chat_sessions', function (Blueprint $table) {
             $table->dropColumn([
-                'widget_id',
-                'is_active',
+                'status',
                 'last_message_at',
                 'message_count',
                 'unread_count',

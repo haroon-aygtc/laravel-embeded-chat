@@ -12,6 +12,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Events\ChatMessageEvent;
+use App\Events\ChatTypingEvent;
 
 class PublicChatController extends Controller
 {
@@ -100,6 +102,9 @@ class PublicChatController extends Controller
                 'attachment_id' => $validated['attachment_id'] ?? null,
             ]);
             
+            // Broadcast the user message
+            event(new ChatMessageEvent($userMessage));
+            
             // Get the widget ID and context rule ID from the session
             $widgetId = $chatSession->widget_id;
             $contextRuleId = $chatSession->context_rule_id;
@@ -152,6 +157,9 @@ class PublicChatController extends Controller
                 ]
             ]);
             
+            // Broadcast the AI response
+            event(new ChatMessageEvent($aiMessage));
+            
             return response()->json([
                 'status' => 'success',
                 'data' => [
@@ -169,6 +177,53 @@ class PublicChatController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to send message'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update typing status for a public chat session.
+     */
+    public function updateTypingStatus(Request $request, string $sessionId): JsonResponse
+    {
+        try {
+            $chatSession = ChatSession::where('id', $sessionId)
+                ->where('context_mode', 'embedded')
+                ->where('is_active', true)
+                ->first();
+            
+            if (!$chatSession) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Chat session not found or inactive'
+                ], 404);
+            }
+            
+            $validated = $request->validate([
+                'is_typing' => 'required|boolean',
+                'client_id' => 'required|string',
+            ]);
+            
+            // Broadcast typing status using client_id as user_id for public chats
+            event(new ChatTypingEvent(
+                $sessionId, 
+                $validated['client_id'], 
+                $validated['is_typing']
+            ));
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Typing status updated'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error updating public typing status: ' . $e->getMessage(), [
+                'exception' => $e,
+                'session_id' => $sessionId
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update typing status'
             ], 500);
         }
     }

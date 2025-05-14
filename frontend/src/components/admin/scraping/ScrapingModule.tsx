@@ -1492,7 +1492,7 @@ const ScrapingModule: React.FC = () => {
                                           onChange={(e) =>
                                             setProxyUrl(e.target.value)
                                           }
-                                          placeholder="http://username:password@proxy.example.com:8000"
+                                          placeholder="http://username:password@proxy.example.com:3000"
                                           className="mt-2"
                                         />
                                       )}

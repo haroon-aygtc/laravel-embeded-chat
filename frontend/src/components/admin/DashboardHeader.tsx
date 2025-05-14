@@ -17,7 +17,13 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import notificationService, { Notification } from "@/services/notificationService";
 
-export function DashboardHeader() {
+interface DashboardHeaderProps {
+  title: string;
+  description: string;
+  
+}
+
+export function DashboardHeader({ title, description }: DashboardHeaderProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -120,8 +126,9 @@ export function DashboardHeader() {
   return (
     <header className="border-b bg-white dark:bg-gray-950">
       <div className="flex h-16 items-center px-4 gap-4 sm:gap-8">
-        <div className="flex items-center gap-2 font-semibold">
-          <span>Admin Dashboard</span>
+        <div className="flex flex-col">
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          <p className="text-sm text-gray-500">{description}</p>
         </div>
         <div className="relative hidden md:flex flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

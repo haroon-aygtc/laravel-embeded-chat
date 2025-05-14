@@ -1,7 +1,9 @@
-
 <?php
 
+use Laravel\Sanctum\Sanctum;
+
 return [
+
     /*
     |--------------------------------------------------------------------------
     | Stateful Domains
@@ -15,8 +17,8 @@ return [
 
     'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
         '%s%s',
-        'localhost,localhost:3000,localhost:5173,localhost:8080,localhost:8081,127.0.0.1,127.0.0.1:8001,127.0.0.1:8080,127.0.0.1:8081,::1',
-        env('APP_URL') ? ','.parse_url(env('APP_URL'), PHP_URL_HOST) : ''
+        'localhost,localhost:3000,localhost:5173,127.0.0.1,127.0.0.1:9000,127.0.0.1:9001,127.0.0.1:5173,::1',
+        Sanctum::currentApplicationUrlWithPort()
     ))),
 
     /*
@@ -39,12 +41,27 @@ return [
     |--------------------------------------------------------------------------
     |
     | This value controls the number of minutes until an issued token will be
-    | considered expired. If this value is null, personal access tokens do
-    | not expire. This won't tweak the lifetime of first-party sessions.
+    | considered expired. This will override any values set in the token's
+    | "expires_at" attribute, but first-party sessions are not affected.
     |
     */
 
-    'expiration' => null,
+    'expiration' => 60 * 24 * 7, // 1 week
+
+    /*
+    |--------------------------------------------------------------------------
+    | Token Prefix
+    |--------------------------------------------------------------------------
+    |
+    | Sanctum can prefix new tokens in order to take advantage of numerous
+    | security scanning initiatives maintained by open source platforms
+    | that notify developers if they commit tokens into repositories.
+    |
+    | See: https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning
+    |
+    */
+
+    'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
 
     /*
     |--------------------------------------------------------------------------
@@ -58,7 +75,9 @@ return [
     */
 
     'middleware' => [
-        'verify_csrf_token' => Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+        'authenticate_session' => Laravel\Sanctum\Http\Middleware\AuthenticateSession::class,
         'encrypt_cookies' => Illuminate\Cookie\Middleware\EncryptCookies::class,
+        'verify_csrf_token' => Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
     ],
+
 ];

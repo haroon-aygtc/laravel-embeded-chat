@@ -8,10 +8,21 @@ use App\Http\Controllers\Controller;
 use App\Services\Chat\ChatService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Events\ChatMessageEvent;
+use App\Events\ChatTypingEvent;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+use App\Models\ChatSession;
+use App\Models\ChatMessage;
+use Illuminate\Support\Facades\Log;
+use App\Services\AI\AIService;
 
 class ChatController extends Controller
 {
-    public function __construct(private readonly ChatService $chatService) {}
+    public function __construct(
+        private readonly ChatService $chatService,
+        private readonly AIService $aiService
+    ) {}
 
     /**
      * Get all chat sessions for the current user
@@ -76,17 +87,141 @@ class ChatController extends Controller
     }
 
     /**
-     * Send a message in a chat session
+     * Send a message in a chat session.
      */
     public function sendMessage(Request $request, string $sessionId): JsonResponse
     {
-        $validated = $request->validate([
-            'content' => 'required|string',
-            'attachments' => 'nullable|array',
-            'contextSnippets' => 'nullable|array',
-        ]);
+        try {
+            $chatSession = ChatSession::where('id', $sessionId)
+                ->where('user_id', Auth::id())
+                ->first();
+            
+            if (!$chatSession) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Chat session not found'
+                ], 404);
+            }
+            
+            // Validate the request
+            $validated = $request->validate([
+                'content' => 'required|string|max:10000',
+                'type' => 'required|string|in:text,image,file',
+                'attachment_id' => 'nullable|string|exists:chat_attachments,id',
+            ]);
+            
+            // Create the user message
+            $userMessage = ChatMessage::create([
+                'id' => (string) Str::uuid(),
+                'chat_session_id' => $sessionId,
+                'content' => $validated['content'],
+                'type' => $validated['type'],
+                'role' => 'user',
+                'attachment_id' => $validated['attachment_id'] ?? null,
+            ]);
+            
+            // Broadcast that the user has sent a message (and is no longer typing)
+            event(new ChatTypingEvent($sessionId, Auth::id(), false));
+            
+            // Broadcast the user message
+            event(new ChatMessageEvent($userMessage));
+            
+            // Get AI response
+            $aiResponse = $this->aiService->generate(
+                $validated['content'],
+                $chatSession->context_rule_id,
+                null,
+                $sessionId
+            );
+            
+            // Create the AI response message
+            $aiMessage = ChatMessage::create([
+                'id' => (string) Str::uuid(),
+                'chat_session_id' => $sessionId,
+                'content' => $aiResponse['content'] ?? 'Sorry, I could not generate a response at this time.',
+                'type' => 'text',
+                'role' => 'assistant',
+                'metadata' => [
+                    'model' => $aiResponse['model'] ?? null,
+                    'processing_time' => $aiResponse['processing_time'] ?? null,
+                    'tokens' => $aiResponse['tokens'] ?? null,
+                ]
+            ]);
+            
+            // Broadcast the AI response
+            event(new ChatMessageEvent($aiMessage));
+            
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'user_message' => $userMessage,
+                    'ai_message' => $aiMessage
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error sending chat message: ' . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => Auth::id(),
+                'session_id' => $sessionId
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to send message'
+            ], 500);
+        }
+    }
 
-        return $this->chatService->sendMessage($request->user(), $sessionId, $validated);
+    /**
+     * Update typing status for a chat session.
+     */
+    public function updateTypingStatus(Request $request, string $sessionId): JsonResponse
+    {
+        try {
+            $chatSession = ChatSession::find($sessionId);
+            
+            if (!$chatSession) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Chat session not found'
+                ], 404);
+            }
+            
+            // Check if user has access to this session
+            if ($chatSession->user_id !== Auth::id() && !Auth::user()->hasRole('admin')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized access to chat session'
+                ], 403);
+            }
+            
+            $validated = $request->validate([
+                'is_typing' => 'required|boolean',
+            ]);
+            
+            // Broadcast typing status
+            event(new ChatTypingEvent(
+                $sessionId, 
+                Auth::id(), 
+                $validated['is_typing']
+            ));
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Typing status updated'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error updating typing status: ' . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => Auth::id(),
+                'session_id' => $sessionId
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update typing status'
+            ], 500);
+        }
     }
 
     /**

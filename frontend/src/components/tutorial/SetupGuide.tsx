@@ -200,7 +200,7 @@ const SetupGuide = () => {
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>Note</AlertTitle>
                   <AlertDescription>
-                    The WebSocket server runs on port 8000 by default. Make sure
+                    The WebSocket server runs on port 3000 by default. Make sure
                     this port is available or update the port in
                     server/websocket-server.js
                   </AlertDescription>
@@ -341,7 +341,7 @@ const SetupGuide = () => {
                     WebSocket Server Configuration
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    The WebSocket server runs on port 8000 by default. If you
+                    The WebSocket server runs on port 3000 by default. If you
                     need to change this:
                   </p>
                   <ol className="list-decimal list-inside space-y-2 text-sm">

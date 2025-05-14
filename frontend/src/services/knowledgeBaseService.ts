@@ -19,7 +19,6 @@ import type {
 } from "../types/knowledgeBase";
 export type { KnowledgeBaseConfig } from "../types/knowledgeBase";
 import { knowledgeBaseCoreApi } from "./api/features/knowledgebase/knowledgebasefeatures";
-import api from './axiosConfig';
 
 // Constants for knowledge base configuration
 export const KNOWLEDGE_BASE_CONSTANTS = {
@@ -655,3 +654,19 @@ class KnowledgeBaseService {
 
 // Export a singleton instance
 export const knowledgeBaseService = new KnowledgeBaseService();
+
+export interface KnowledgeBaseConfig {
+  id: string;
+  name: string;
+  type: 'api' | 'database' | 'cms' | 'vector' | 'file';
+  endpoint?: string;
+  apiKey?: string;
+  connectionString?: string;
+  refreshInterval: number;
+  parameters: Record<string, any>;
+  parametersText?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  lastSyncedAt?: string;
+}

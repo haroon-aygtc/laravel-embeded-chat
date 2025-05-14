@@ -1,16 +1,31 @@
 /**
- * API Configuration
+ * API Configuration (Legacy)
  * 
- * Centralized API configuration settings
+ * This file is maintained for backward compatibility.
+ * Please use the centralized API client from '@/services/api/core/apiClient' for all new code.
  */
 
-import { API_BASE_URL } from './constants';
+import {
+    API_BASE_URL,
+    WS_BASE_URL,
+    WS_PORT,
+    WS_APP_KEY,
+    getWebSocketUrl
+} from '@/services/api/core/apiClient';
 
-export { API_BASE_URL };
+// Re-export for backwards compatibility
+export {
+    API_BASE_URL,
+    WS_BASE_URL,
+    WS_PORT,
+    WS_APP_KEY,
+    getWebSocketUrl
+};
 
-export const API_TIMEOUT = 30000; // 30 seconds
-
-export const API_HEADERS = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
+export default {
+    API_BASE_URL,
+    WS_BASE_URL,
+    WS_PORT,
+    WS_APP_KEY,
+    getWebSocketUrl
 }; 
