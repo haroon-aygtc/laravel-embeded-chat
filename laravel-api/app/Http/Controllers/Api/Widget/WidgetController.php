@@ -16,275 +16,170 @@ use Illuminate\Support\Facades\Log;
 
 class WidgetController extends Controller
 {
+    protected $widgetService;
+
     /**
-     * Constructor.
+     * Constructor with dependency injection
+     *
+     * @param WidgetService $widgetService
      */
-    public function __construct(protected WidgetService $widgetService)
+    public function __construct(WidgetService $widgetService)
     {
+        $this->widgetService = $widgetService;
+        $this->middleware('auth:sanctum');
     }
 
     /**
-     * Display a listing of the widgets.
+     * Get a paginated list of widgets for the authenticated user
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
+    {
+        $filters = $request->only(['name', 'is_active']);
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
+
+        $result = $this->widgetService->getAllWidgets($filters, $page, $perPage);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Get a specific widget by ID
+     *
+     * @param string $id Widget ID
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function show(string $id)
+    {
+        $result = $this->widgetService->getWidget($id);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Get the default widget configuration
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getDefaultWidget(): JsonResponse
     {
         try {
-            $filters = $request->only(['name', 'is_active', 'user_id']);
-            $perPage = (int) $request->input('per_page', 10);
-            
-            $widgets = $this->widgetService->getWidgets($filters, $perPage);
-            
+            $result = $this->widgetService->getDefaultWidget();
+
             return response()->json([
-                'status' => 'success',
-                'data' => $widgets
+                'success' => true,
+                'data' => $result,
+                'message' => 'Default widget configuration retrieved successfully'
             ]);
         } catch (\Exception $e) {
-            Log::error('Error fetching widgets: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id()
-            ]);
-            
             return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to fetch widgets'
+                'success' => false,
+                'message' => 'Failed to retrieve default widget configuration: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Store a newly created widget in storage.
+     * Create a new widget
+     *
+     * @param StoreWidgetRequest $request
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function store(StoreWidgetRequest $request): JsonResponse
+    public function store(StoreWidgetRequest $request)
     {
-        try {
-            $data = $request->validated();
-            $widget = $this->widgetService->createWidget($data);
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Widget created successfully',
-                'data' => $widget
-            ], 201);
-        } catch (\Exception $e) {
-            Log::error('Error creating widget: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'data' => $request->validated()
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to create widget'
-            ], 500);
-        }
+        $data = $request->validated();
+
+        // Ensure the authenticated user is set as the owner
+        $data['user_id'] = Auth::id();
+
+        $result = $this->widgetService->createWidget($data);
+
+        return response()->json($result, $result['status'] === 'success' ? 201 : 422);
     }
 
     /**
-     * Display the specified widget.
+     * Update an existing widget
+     *
+     * @param UpdateWidgetRequest $request
+     * @param string $id Widget ID
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function show(string $id): JsonResponse
+    public function update(UpdateWidgetRequest $request, string $id)
     {
-        try {
-            $widget = $this->widgetService->getWidget($id);
-            
-            if (!$widget) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Widget not found'
-                ], 404);
-            }
-            
-            // Check if user has access to widget
-            if ($widget->user_id !== Auth::id() && !Auth::user()->hasRole('admin')) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Unauthorized access to widget'
-                ], 403);
-            }
-            
-            return response()->json([
-                'status' => 'success',
-                'data' => $widget
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error fetching widget: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'widget_id' => $id
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to fetch widget'
-            ], 500);
-        }
+        $result = $this->widgetService->updateWidget($id, $request->validated());
+
+        return response()->json($result);
     }
 
     /**
-     * Update the specified widget in storage.
+     * Delete a widget
+     *
+     * @param string $id Widget ID
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function update(UpdateWidgetRequest $request, string $id): JsonResponse
+    public function destroy(string $id)
     {
-        try {
-            $data = $request->validated();
-            $widget = $this->widgetService->updateWidget($id, $data);
-            
-            if (!$widget) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Widget not found or unauthorized'
-                ], 404);
-            }
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Widget updated successfully',
-                'data' => $widget
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error updating widget: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'widget_id' => $id,
-                'data' => $request->validated()
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to update widget'
-            ], 500);
-        }
+        $result = $this->widgetService->deleteWidget($id);
+
+        return response()->json($result);
     }
 
     /**
-     * Remove the specified widget from storage.
+     * Toggle a widget's active status
+     *
+     * @param string $id Widget ID
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function destroy(string $id): JsonResponse
+    public function toggleStatus(string $id)
     {
-        try {
-            $result = $this->widgetService->deleteWidget($id);
-            
-            if (!$result) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Widget not found or unauthorized'
-                ], 404);
-            }
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Widget deleted successfully'
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error deleting widget: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'widget_id' => $id
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to delete widget'
-            ], 500);
-        }
+        $result = $this->widgetService->toggleWidgetStatus($id);
+
+        return response()->json($result);
     }
 
     /**
-     * Toggle the active status of a widget.
+     * Generate widget embed code
+     *
+     * @param Request $request
+     * @param string $id Widget ID
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function toggleStatus(string $id): JsonResponse
+    public function generateEmbedCode(Request $request, string $id)
     {
-        try {
-            $widget = $this->widgetService->toggleWidgetStatus($id);
-            
-            if (!$widget) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Widget not found or unauthorized'
-                ], 404);
-            }
-            
-            $status = $widget->is_active ? 'activated' : 'deactivated';
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => "Widget {$status} successfully",
-                'data' => $widget
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error toggling widget status: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'widget_id' => $id
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to toggle widget status'
-            ], 500);
-        }
+        $type = $request->input('type', 'iframe');
+        $result = $this->widgetService->generateEmbedCode($id, $type);
+
+        return response()->json($result);
     }
 
     /**
-     * Generate embed code for a widget.
+     * Get widget analytics data
+     *
+     * @param Request $request
+     * @param string $id Widget ID
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function generateEmbedCode(string $id, Request $request): JsonResponse
+    public function getAnalytics(Request $request, string $id)
     {
-        try {
-            $type = $request->input('type', 'iframe');
-            
-            if (!in_array($type, ['iframe', 'webcomponent'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Invalid embed type. Must be "iframe" or "webcomponent"'
-                ], 400);
-            }
-            
-            $widget = $this->widgetService->getWidget($id);
-            
-            if (!$widget) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Widget not found'
-                ], 404);
-            }
-            
-            // Check if user has access to widget
-            if ($widget->user_id !== Auth::id() && !Auth::user()->hasRole('admin')) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Unauthorized access to widget'
-                ], 403);
-            }
-            
-            $embedCode = $this->widgetService->generateEmbedCode($id, $type);
-            
-            if (!$embedCode) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to generate embed code'
-                ], 500);
-            }
-            
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'embed_code' => $embedCode,
-                    'type' => $type
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error generating embed code: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'widget_id' => $id
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to generate embed code'
-            ], 500);
-        }
+        $timeRange = $request->input('time_range', '7d');
+        $result = $this->widgetService->getWidgetAnalytics($id, $timeRange);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Get all widgets for the current user
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getUserWidgets()
+    {
+        $result = $this->widgetService->getWidgetsByUser(Auth::id());
+
+        return response()->json($result);
     }
 
     /**
@@ -294,16 +189,16 @@ class WidgetController extends Controller
     {
         try {
             $domain = $request->input('domain');
-            
+
             if (!$domain) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Domain parameter is required'
                 ], 400);
             }
-            
+
             $isValid = $this->widgetService->isValidDomain($id, $domain);
-            
+
             return response()->json([
                 'status' => 'success',
                 'data' => [
@@ -316,11 +211,11 @@ class WidgetController extends Controller
                 'widget_id' => $id,
                 'domain' => $request->input('domain')
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to validate domain'
             ], 500);
         }
     }
-} 
+}

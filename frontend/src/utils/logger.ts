@@ -1,91 +1,86 @@
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+/**
+ * Simple logger utility for application logging
+ */
 
-// Determine if we're in development mode
-const isDev = import.meta.env.DEV;
+import { LOG_LEVEL } from '@/config/constants';
 
-// Set the minimum log level
-const minLevel: LogLevel = isDev ? 'debug' : 'warn';
-
-const levels: Record<LogLevel, number> = {
+// Define log levels and their priorities
+const LOG_LEVELS = {
     debug: 0,
     info: 1,
     warn: 2,
-    error: 3,
+    error: 3
 };
 
-// Colors for different log levels
-const colors: Record<LogLevel, string> = {
-    debug: '#808080', // Gray
-    info: '#0077cc',  // Blue
-    warn: '#ff9900',  // Orange
-    error: '#cc0000', // Red
+// Default to 'info' log level if not specified
+const currentLogLevel = LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'error');
+
+const shouldLog = (level: keyof typeof LOG_LEVELS): boolean => {
+    return LOG_LEVELS[level] >= LOG_LEVELS[currentLogLevel as keyof typeof LOG_LEVELS];
 };
 
-/**
- * Simple logger utility with log levels
- */
 const logger = {
-    debug(...args: any[]): void {
-        if (levels[minLevel] <= levels.debug) {
-            console.log(`%c[DEBUG]`, `color: ${colors.debug}; font-weight: bold;`, ...args);
-        }
-    },
-
-    info(...args: any[]): void {
-        if (levels[minLevel] <= levels.info) {
-            console.info(`%c[INFO]`, `color: ${colors.info}; font-weight: bold;`, ...args);
-        }
-    },
-
-    warn(...args: any[]): void {
-        if (levels[minLevel] <= levels.warn) {
-            console.warn(`%c[WARN]`, `color: ${colors.warn}; font-weight: bold;`, ...args);
-        }
-    },
-
-    error(...args: any[]): void {
-        if (levels[minLevel] <= levels.error) {
-            console.error(`%c[ERROR]`, `color: ${colors.error}; font-weight: bold;`, ...args);
+    /**
+     * Log debug message (development only)
+     */
+    debug: (message: string, ...args: any[]) => {
+        if (shouldLog('debug')) {
+            console.debug(`[DEBUG] ${message}`, ...args);
         }
     },
 
     /**
-     * Log group for related messages
+     * Log informational message
      */
-    group(name: string, level: LogLevel = 'info', collapsed = false): void {
-        if (levels[minLevel] <= levels[level]) {
-            if (collapsed) {
-                console.groupCollapsed(`%c[${level.toUpperCase()}] ${name}`, `color: ${colors[level]}; font-weight: bold;`);
-            } else {
-                console.group(`%c[${level.toUpperCase()}] ${name}`, `color: ${colors[level]}; font-weight: bold;`);
-            }
+    info: (message: string, ...args: any[]) => {
+        if (shouldLog('info')) {
+            console.info(`[INFO] ${message}`, ...args);
+        }
+    },
+
+    /**
+     * Log warning message
+     */
+    warn: (message: string, ...args: any[]) => {
+        if (shouldLog('warn')) {
+            console.warn(`[WARN] ${message}`, ...args);
+        }
+    },
+
+    /**
+     * Log error message
+     */
+    error: (message: string, ...args: any[]) => {
+        if (shouldLog('error')) {
+            console.error(`[ERROR] ${message}`, ...args);
+        }
+    },
+
+    /**
+     * Group log messages
+     */
+    group: (name: string, collapsed = false) => {
+        if (collapsed) {
+            console.groupCollapsed(name);
+        } else {
+            console.group(name);
         }
     },
 
     /**
      * End a log group
      */
-    groupEnd(): void {
+    groupEnd: () => {
         console.groupEnd();
     },
 
     /**
-     * Time a function execution
+     * Log with a timestamp
      */
-    time(label: string): void {
-        if (isDev) {
-            console.time(label);
-        }
-    },
-
-    /**
-     * End timing a function execution
-     */
-    timeEnd(label: string): void {
-        if (isDev) {
-            console.timeEnd(label);
-        }
-    },
+    time: (message: string, ...args: any[]) => {
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] ${message}`, ...args);
+    }
 };
 
 export default logger; 

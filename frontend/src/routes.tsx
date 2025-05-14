@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from "react";
-import { Route, Routes, Navigate } from "react-router-dom";
+import { Route, Routes, Navigate, Outlet } from "react-router-dom";
 import Home from "@/components/home";
 import LoginPage from "@/pages/auth/login";
 import SignupPage from "@/pages/auth/signup";
@@ -10,6 +10,8 @@ import ChatEmbedPage from "@/pages/chat-embed";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import AdminRoute from "@/components/auth/AdminRoute";
 import AdminLayout from "@/components/admin/layout/AdminLayout";
+import WebSocketTester from "@/components/websocket-demo/WebSocketTester";
+import WebSocketTestPage from "@/pages/websocket-test";
 
 // Lazy-loaded admin components
 const Dashboard = lazy(() => import("@/pages/admin/dashboard"));
@@ -86,6 +88,9 @@ const AppRoutes = () => {
       <Route path="/chat" element={<ChatPage />} />
       <Route path="/chat-embed" element={<ChatEmbedPage />} />
 
+      {/* WebSocket test route */}
+      <Route path="/websocket-test" element={<WebSocketTestPage />} />
+
       {/* User routes */}
       <Route
         path="/user/profile"
@@ -103,7 +108,9 @@ const AppRoutes = () => {
         path="/admin"
         element={
           <AdminRoute>
-            <AdminLayout />
+            <AdminLayout>
+              <Outlet />
+            </AdminLayout>
           </AdminRoute>
         }
       >

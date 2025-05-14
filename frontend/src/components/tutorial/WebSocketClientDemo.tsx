@@ -41,7 +41,7 @@ const WebSocketClientDemo = () => {
   const connectWebSocket = () => {
     try {
       // Use localhost for development
-      const wsUrl = `ws://localhost:8080`;
+      const wsUrl = `ws://localhost:8000`;
       const newSocket = new WebSocket(wsUrl);
 
       setConnectionAttempts((prev) => prev + 1);
@@ -166,7 +166,7 @@ const WebSocketClientDemo = () => {
         <div className="flex items-center justify-between">
           <CardTitle>WebSocket Demo</CardTitle>
           <Badge
-            variant={connected ? "success" : "destructive"}
+            variant={connected ? "default" : "secondary"}
             className="ml-2"
           >
             {connected ? (
@@ -289,7 +289,7 @@ const WebSocketClientDemo = () => {
               <div className="grid grid-cols-2 gap-2">
                 <div className="text-sm font-medium">Status:</div>
                 <div>
-                  <Badge variant={connected ? "success" : "destructive"}>
+                  <Badge variant={connected ? "default" : "secondary"}>
                     {connected ? "Connected" : "Disconnected"}
                   </Badge>
                 </div>
@@ -310,7 +310,7 @@ const WebSocketClientDemo = () => {
 
                 <div className="text-sm font-medium">WebSocket URL:</div>
                 <div className="text-sm font-mono truncate">
-                  ws://localhost:8080
+                  ws://localhost:8000
                 </div>
               </div>
 

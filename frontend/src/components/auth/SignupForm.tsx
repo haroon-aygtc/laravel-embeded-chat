@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -12,25 +12,66 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MessageSquare, Lock, Mail, User } from "lucide-react";
 import { Link } from "react-router-dom";
+import { getCsrfToken } from "@/utils/auth";
+import logger from "@/utils/logger";
 
 const SignupForm = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
   const { register, isLoading, error, clearError } = useAuth();
   const navigate = useNavigate();
+  const isSubmittingRef = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
+
+    // Prevent multiple submissions
+    if (isSubmittingRef.current || isLoading) {
+      logger.warn("Preventing duplicate form submission");
       return;
     }
-    await register(name, email, password);
-    navigate("/login");
+
+    // Clear any previous errors
+    clearError();
+    setFormError(null);
+
+    // Validate password confirmation
+    if (password !== confirmPassword) {
+      setFormError("Passwords do not match");
+      return;
+    }
+
+    try {
+      // Set submission flag
+      isSubmittingRef.current = true;
+
+      // Get CSRF token before submission
+      await getCsrfToken();
+
+      logger.info("Attempting to register user");
+      const success = await register(name, email, password);
+
+      if (success) {
+        logger.info("Registration successful, navigating to home");
+        navigate("/");
+      } else {
+        setFormError("Registration failed. Please try again.");
+      }
+    } catch (err) {
+      logger.error("Registration error:", err);
+      setFormError("An error occurred during registration. Please try again.");
+    } finally {
+      // Reset submission flag with delay to prevent repeated submissions
+      setTimeout(() => {
+        isSubmittingRef.current = false;
+      }, 2000);
+    }
   };
 
   return (
@@ -50,10 +91,17 @@ const SignupForm = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+          {(error || formError) && (
+            <Card className="border-red-300 bg-red-50 mt-4">
+              <CardContent className="p-4">
+                <Alert variant="destructive">
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>
+                    {formError || (typeof error === 'object' ? JSON.stringify(error) : error)}
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -66,6 +114,7 @@ const SignupForm = () => {
                   value={name}
                   onChange={(e) => {
                     clearError();
+                    setFormError(null);
                     setName(e.target.value);
                   }}
                   required
@@ -86,6 +135,7 @@ const SignupForm = () => {
                   value={email}
                   onChange={(e) => {
                     clearError();
+                    setFormError(null);
                     setEmail(e.target.value);
                   }}
                   required
@@ -106,6 +156,7 @@ const SignupForm = () => {
                   value={password}
                   onChange={(e) => {
                     clearError();
+                    setFormError(null);
                     setPassword(e.target.value);
                   }}
                   required
@@ -126,6 +177,7 @@ const SignupForm = () => {
                   value={confirmPassword}
                   onChange={(e) => {
                     clearError();
+                    setFormError(null);
                     setConfirmPassword(e.target.value);
                   }}
                   required
@@ -139,8 +191,12 @@ const SignupForm = () => {
                 <p className="text-sm text-red-500">Passwords do not match</p>
               )}
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Creating account..." : "Sign Up"}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading || isSubmittingRef.current}
+            >
+              {isLoading || isSubmittingRef.current ? "Creating account..." : "Sign Up"}
             </Button>
           </form>
         </CardContent>

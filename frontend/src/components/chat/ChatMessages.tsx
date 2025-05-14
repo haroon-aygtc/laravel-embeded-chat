@@ -1,17 +1,13 @@
-import React, { useRef, useEffect } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ThumbsUp, ThumbsDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import FormattedMessage from "./FormattedMessage";
-import FollowUpQuestions from "./FollowUpQuestions";
-import { FollowUpConfig } from "@/components/admin/FollowUpQuestionsConfig";
+import React, { RefObject } from 'react';
+import { ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
+import FollowUpQuestions from './FollowUpQuestions';
 
-interface Message {
+export interface Message {
   id: string;
   content: string;
-  role: "user" | "assistant" | "system";
-  timestamp: Date;
-  status?: "sending" | "sent" | "error";
+  role: 'user' | 'assistant' | 'system';
+  timestamp: string;
+  status?: 'sending' | 'sent' | 'error';
   followUpQuestions?: string[];
 }
 
@@ -19,182 +15,105 @@ interface ChatMessagesProps {
   messages: Message[];
   isTyping: boolean;
   allowFeedback?: boolean;
-  messagesEndRef?: React.RefObject<HTMLDivElement>;
+  messagesEndRef: RefObject<HTMLDivElement>;
   enableMarkdown?: boolean;
-  followUpConfig?: FollowUpConfig;
   onSelectFollowUpQuestion?: (question: string) => void;
 }
 
 const ChatMessages: React.FC<ChatMessagesProps> = ({
   messages,
   isTyping,
-  allowFeedback = true,
+  allowFeedback = false,
   messagesEndRef,
   enableMarkdown = false,
-  followUpConfig,
   onSelectFollowUpQuestion,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+  const renderMessageContent = (content: string) => {
+    if (!enableMarkdown) {
+      return <p className="whitespace-pre-wrap break-words">{content}</p>;
     }
-  }, [messages, isTyping]);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // Very simple markdown-like rendering
+    // For production, use a proper markdown library like react-markdown
+    const renderParagraphs = content.split('\n\n').map((paragraph, index) => (
+      <p key={index} className="whitespace-pre-wrap break-words mb-4 last:mb-0">
+        {paragraph}
+      </p>
+    ));
+
+    return <>{renderParagraphs}</>;
   };
 
-  const handleFeedback = (messageId: string, isPositive: boolean) => {
-    console.log(
-      `Feedback for message ${messageId}: ${isPositive ? "👍" : "👎"}`,
-    );
-    // In a real implementation, this would send the feedback to the server
+  const formatTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '';
+    }
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={containerRef}>
-      {messages &&
-        messages.length > 0 &&
-        messages.map((message) => (
+    <div className="space-y-6">
+      {messages.map((message) => (
+        <div key={message.id} className="message-container">
           <div
-            key={message.id}
-            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`flex max-w-[80%] ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+              className={`rounded-lg px-4 py-2 max-w-[85%] shadow-sm ${message.role === 'user'
+                ? 'bg-primary text-primary-foreground ml-auto'
+                : message.role === 'system'
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-card border'
+                }`}
             >
-              <Avatar className="h-8 w-8 mt-1">
-                {message.role === "user" ? (
-                  <>
-                    <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=user" />
-                    <AvatarFallback>U</AvatarFallback>
-                  </>
-                ) : (
-                  <>
-                    <AvatarImage src="https://api.dicebear.com/7.x/bottts/svg?seed=assistant" />
-                    <AvatarFallback>AI</AvatarFallback>
-                  </>
-                )}
-              </Avatar>
-
-              <div
-                className={`mx-2 ${message.role === "user" ? "items-end" : "items-start"} flex flex-col`}
-              >
-                <div
-                  className={`rounded-lg p-3 ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"} ${message.status === "error" ? "border border-red-500" : ""}`}
-                  style={{
-                    backgroundColor:
-                      message.role === "user"
-                        ? "var(--primary-color, #4f46e5)"
-                        : "var(--secondary-color, #f3f4f6)",
-                    color:
-                      message.role === "user"
-                        ? "white"
-                        : "var(--text-color, #374151)",
-                    borderRadius: "var(--border-radius, 8px)",
-                  }}
-                >
-                  {enableMarkdown ? (
-                    <FormattedMessage
-                      content={message.content}
-                      enableMarkdown={enableMarkdown}
-                    />
-                  ) : (
-                    message.content
-                  )}
-                </div>
-
-                {message.role === "assistant" &&
-                  message.followUpQuestions &&
-                  message.followUpQuestions.length > 0 && (
-                    <div className="mt-2">
-                      <FollowUpQuestions
-                        questions={message.followUpQuestions}
-                        onSelectQuestion={
-                          onSelectFollowUpQuestion || (() => {})
-                        }
-                        displayStyle={
-                          followUpConfig?.showFollowUpAs || "buttons"
-                        }
-                      />
-                    </div>
-                  )}
-
-                <div className="flex items-center mt-1 text-xs text-gray-500">
-                  <span>{formatTime(message.timestamp)}</span>
-                  {message.status === "sending" && (
-                    <span className="ml-2 italic">Sending...</span>
-                  )}
-                  {message.status === "error" && (
-                    <span className="ml-2 text-red-500">Failed to send</span>
-                  )}
-                </div>
-
-                {allowFeedback && message.role === "assistant" && (
-                  <div className="flex mt-1 space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => handleFeedback(message.id, true)}
-                    >
-                      <ThumbsUp className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => handleFeedback(message.id, false)}
-                    >
-                      <ThumbsDown className="h-3 w-3" />
-                    </Button>
-                  </div>
+              {renderMessageContent(message.content)}
+              <div className="flex justify-between items-center mt-2 text-xs opacity-70">
+                <span>{formatTime(message.timestamp)}</span>
+                {message.status === 'sending' && <span>Sending...</span>}
+                {message.status === 'error' && (
+                  <span className="text-destructive">Error sending</span>
                 )}
               </div>
             </div>
           </div>
-        ))}
+
+          {message.role === 'assistant' && message.followUpQuestions && message.followUpQuestions.length > 0 && onSelectFollowUpQuestion && (
+            <div className="mt-2">
+              <FollowUpQuestions
+                questions={message.followUpQuestions}
+                onSelectQuestion={onSelectFollowUpQuestion}
+                primaryColor="var(--primary)"
+              />
+            </div>
+          )}
+
+          {allowFeedback && message.role === 'assistant' && (
+            <div className="flex justify-start gap-2 mt-1 pl-2">
+              <button className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100">
+                <ThumbsUp size={14} />
+              </button>
+              <button className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100">
+                <ThumbsDown size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
 
       {isTyping && (
         <div className="flex justify-start">
-          <div className="flex max-w-[80%]">
-            <Avatar className="h-8 w-8 mt-1">
-              <AvatarImage src="https://api.dicebear.com/7.x/bottts/svg?seed=assistant" />
-              <AvatarFallback>AI</AvatarFallback>
-            </Avatar>
-
-            <div className="mx-2 items-start flex flex-col">
-              <div
-                className="rounded-lg p-3 bg-secondary text-secondary-foreground"
-                style={{
-                  backgroundColor: "var(--secondary-color, #f3f4f6)",
-                  color: "var(--text-color, #374151)",
-                  borderRadius: "var(--border-radius, 8px)",
-                }}
-              >
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              </div>
+          <div className="bg-card rounded-lg px-4 py-3 border shadow-sm">
+            <div className="flex space-x-2 items-center">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Generating response...</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* This div is used to scroll to the bottom */}
       <div ref={messagesEndRef} />
-
-      {/* Show empty state if no messages */}
-      {(!messages || messages.length === 0) && !isTyping && (
-        <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 p-4">
-          <p>Starting conversation...</p>
-        </div>
-      )}
     </div>
   );
 };

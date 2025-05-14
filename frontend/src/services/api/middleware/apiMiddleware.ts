@@ -6,10 +6,10 @@
  * communication, eliminating direct database access from the frontend.
  */
 
-import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from "axios";
+import axios, { AxiosRequestConfig, AxiosResponse, AxiosError, AxiosInstance } from "axios";
 import { env } from "@/config/env";
 import logger from "@/utils/logger";
-import { getAuthToken, isTokenExpired } from "@/utils/auth";
+import { getAuthToken, isTokenExpired, getCsrfToken } from "@/utils/auth";
 
 // Standard API response format
 export interface ApiResponse<T = any> {
@@ -121,136 +121,86 @@ const generateRequestId = (): string => {
   );
 };
 
-// Create axios instance with base URL and sensible defaults
-const apiClient = axios.create({
-  baseURL: env.API_BASE_URL || "/api",
+// Centralized API configuration
+const BASE_URL = env.API_BASE_URL || 'http://localhost:8000/api';
+const DEFAULT_TIMEOUT = 30000; // 30 seconds
+
+// Create API client instance
+const apiClient: AxiosInstance = axios.create({
+  baseURL: BASE_URL,
+  timeout: DEFAULT_TIMEOUT,
   headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   },
-  timeout: 30000, // 30 seconds
-  withCredentials: true, // Include cookies in cross-origin requests if needed
+  withCredentials: true, // Required for cookies (CSRF, auth)
 });
 
-// Add request interceptor for authentication and security
+// Request interceptor
 apiClient.interceptors.request.use(
-  (config) => {
-    // Get token from localStorage
-    const token = getAuthToken();
-    if (token && !config.headers.Authorization) {
-      // Check if token is expired
-      if (isTokenExpired(token)) {
-        // Token is expired, redirect to login
-        // This could also trigger a token refresh flow instead
-        localStorage.removeItem("authToken");
-        if (!window.location.pathname.startsWith("/auth/")) {
-          window.location.href =
-            "/auth/login?redirect=" +
-            encodeURIComponent(window.location.pathname);
-        }
-      } else {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+  async (config) => {
+    // Add auth token if available
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // Add request ID for tracing
-    const requestId = generateRequestId();
-    config.headers["X-Request-ID"] = requestId;
-
-    // Add CSRF protection for non-GET requests
-    if (config.method !== "get") {
-      const csrfToken = document
-        .querySelector('meta[name="csrf-token"]')
-        ?.getAttribute("content");
-      if (csrfToken) {
-        config.headers["X-CSRF-Token"] = csrfToken;
-      }
-    }
+    // Add request ID for tracking
+    config.headers['X-Request-ID'] = generateRequestId();
 
     return config;
   },
   (error) => {
-    logger.error("Request interceptor error", error);
     return Promise.reject(error);
-  },
+  }
 );
 
-// Add response interceptor for error handling and response standardization
+// Response interceptor
 apiClient.interceptors.response.use(
   (response) => {
-    // Transform response to standard format if it's not already
-    if (
-      response.data &&
-      typeof response.data === "object" &&
-      !("success" in response.data)
-    ) {
-      response.data = {
-        success: true,
-        data: response.data,
-        meta: {
-          timestamp: new Date().toISOString(),
-          requestId: response.config.headers["X-Request-ID"] as string,
-        },
-      };
-    }
     return response;
   },
-  (error: AxiosError) => {
-    // Handle authentication errors
-    if (error.response?.status === 401) {
-      // Clear token and redirect to login
-      localStorage.removeItem("authToken");
-      // Use a more controlled approach to redirect
-      if (!window.location.pathname.startsWith("/auth/")) {
-        window.location.href =
-          "/auth/login?redirect=" +
-          encodeURIComponent(window.location.pathname);
+  async (error: AxiosError) => {
+    // Handle CSRF token errors
+    if (error.response?.status === 419 ||
+      (error.response?.status === 403 && error.response?.data &&
+        typeof error.response.data === 'object' &&
+        'message' in error.response.data &&
+        typeof error.response.data.message === 'string' &&
+        error.response.data.message.includes('CSRF'))) {
+      try {
+        await getCsrfToken();
+        // Retry the original request
+        if (error.config) {
+          return axios(error.config);
+        }
+      } catch (err) {
+        logger.error('Failed to refresh CSRF token:', err);
       }
     }
 
-    // Handle CSRF token errors
-    if (
-      error.response?.status === 403 &&
-      error.response?.data?.error &&
-      error.response?.data?.error?.code === "INVALID_CSRF_TOKEN"
-    ) {
-      // Refresh the page to get a new CSRF token
-      window.location.reload();
-      return Promise.reject(error);
+    // Handle authentication errors
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+
+      // Redirect to login if not already on login page
+      if (!window.location.pathname.startsWith('/auth/')) {
+        window.location.href = `/auth/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+      }
     }
 
-    // Standardize error response
-    const errorResponse: ApiResponse = {
-      success: false,
-      error: {
-        code: error.response?.status
-          ? `ERR_${error.response.status}`
-          : "ERR_NETWORK",
-        message: error.message || "An unexpected error occurred",
-        details: error.response?.data,
-      },
-      meta: {
-        timestamp: new Date().toISOString(),
-        requestId:
-          (error.config?.headers?.["X-Request-ID"] as string) ||
-          generateRequestId(),
-      },
-    };
-
-    // Log error details for debugging
-    logger.error("API Response Error", {
+    // Log detailed error info
+    logger.error('API Request Failed', {
       url: error.config?.url,
       method: error.config?.method,
       status: error.response?.status,
-      error: errorResponse.error,
+      data: error.response?.data,
     });
 
-    // Return standardized error
-    return Promise.reject({
-      ...error,
-      response: { ...error.response, data: errorResponse },
-    });
-  },
+    return Promise.reject(error);
+  }
 );
 
 /**
@@ -424,4 +374,7 @@ export const api = {
 
   // Get the base URL for the API
   getBaseUrl: () => apiClient.defaults.baseURL,
+
+  // Direct client access if needed
+  client: apiClient
 };

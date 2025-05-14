@@ -4,30 +4,43 @@ import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 import FollowUpQuestions from "./FollowUpQuestions";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, X, Loader2 } from "lucide-react";
+import { MessageSquare, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { chatService } from "@/services/chatService";
 import { useAuth } from "@/context/AuthContext";
-import { useWebSocket } from "@/hooks/useWebSocket";
-import { FollowUpConfig } from "@/components/admin/FollowUpQuestionsConfig";
-import { ResponseFormattingConfig } from "@/components/admin/ResponseFormattingOptions";
+import useWebSocket, { WebSocketMessage } from "@/hooks/useWebSocket";
+import { widgetClientService, ChatMessage as ApiChatMessage } from "@/services/widgetClientService";
+import { DEFAULT_WIDGET_CONFIG } from "@/config/constants";
+import logger from "@/utils/logger";
 
+// Define interface for component props
 interface ChatWidgetWithConfigProps {
   config?: any;
   previewMode?: boolean;
   widgetId?: string;
   onClose?: () => void;
   embedded?: boolean;
-  followUpConfig?: FollowUpConfig;
-  responseConfig?: ResponseFormattingConfig;
+  followUpConfig?: {
+    enableFollowUpQuestions: boolean;
+    generateAutomatically: boolean;
+    maxFollowUpQuestions: number;
+    predefinedQuestions: Array<{
+      id: string;
+      name: string;
+      questions: string[];
+    }>;
+  };
+  responseConfig?: {
+    enableMarkdown: boolean;
+  };
 }
 
+// Message interface for display
 interface Message {
   id: string;
   content: string;
-  role: "user" | "assistant" | "system";
-  timestamp: Date;
-  status?: "sending" | "sent" | "error";
+  role: 'user' | 'assistant' | 'system';
+  timestamp: string;
+  status?: 'sending' | 'sent' | 'error';
   followUpQuestions?: string[];
 }
 
@@ -45,42 +58,54 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
   const [isTyping, setIsTyping] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Improved WebSocket connection with error handling
-  const wsUrl = widgetId ? `/api/chat/${widgetId}/ws` : undefined;
+  // WebSocket setup
+  const wsUrl = sessionId ? `/chat/${sessionId}/ws` : undefined;
   const {
     connected,
     lastMessage,
     sendMessage,
     error: wsError,
-  } = useWebSocket(wsUrl);
+  } = useWebSocket(wsUrl, {
+    onMessage: (data) => {
+      if (data && typeof data === 'object') {
+        if (data.type === 'message') {
+          // Handle incoming message
+          const aiMessage: Message = {
+            id: data.data.id || `ai-${Date.now()}`,
+            content: data.data.content,
+            role: 'assistant',
+            timestamp: data.data.timestamp || new Date().toISOString(),
+          };
+
+          setMessages((prev) => [...prev, aiMessage]);
+          setIsTyping(false);
+
+          // Check for follow-up questions
+          if (data.data.followUpQuestions) {
+            setFollowUpQuestions(data.data.followUpQuestions);
+          } else {
+            setFollowUpQuestions([]);
+          }
+        }
+        else if (data.type === 'typing') {
+          setIsTyping(data.data.isTyping);
+        }
+      }
+    }
+  });
 
   // Default configuration
-  const defaultConfig = {
-    primaryColor: "#4f46e5",
-    secondaryColor: "#f3f4f6",
-    fontFamily: "Inter",
-    borderRadius: 8,
-    position: "bottom-right",
-    initialMessage: "Hello! How can I help you today?",
-    placeholderText: "Type your message here...",
-    titleText: "Chat Support",
-    subtitleText: "We typically reply within a few minutes",
-    showBranding: true,
-    allowAttachments: false,
-    allowFeedback: true,
-  };
-
-  // Merge provided config with defaults
-  const widgetConfig = { ...defaultConfig, ...config };
+  const widgetConfig = { ...DEFAULT_WIDGET_CONFIG, ...config };
 
   // Handle WebSocket connection errors
   useEffect(() => {
     if (wsError && !previewMode) {
-      console.error("WebSocket connection error:", wsError);
+      logger.error("WebSocket connection error:", wsError);
       toast({
         title: "Connection Error",
         description:
@@ -95,15 +120,12 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
     const loadWidgetConfig = async () => {
       if (widgetId && !previewMode) {
         try {
-          const response = await fetch(`/api/widget/${widgetId}/config`);
-          if (response.ok) {
-            const data = await response.json();
-            // This would update the config in a real implementation
-            // For now, we just mark it as loaded
-            setIsConfigLoaded(true);
-          }
+          const widgetData = await widgetClientService.getWidgetConfig(widgetId);
+          // Merge the loaded configuration with defaults and current config
+          // This would update the config in a real implementation
+          setIsConfigLoaded(true);
         } catch (error) {
-          console.error("Error loading widget configuration:", error);
+          logger.error("Error loading widget configuration:", error);
           // Still mark as loaded to continue with defaults
           setIsConfigLoaded(true);
         }
@@ -123,291 +145,230 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
     }
   }, [isOpen, isConfigLoaded]);
 
-  // Handle WebSocket messages with improved error handling
+  // Handle incoming WebSocket messages
   useEffect(() => {
-    if (lastMessage && sessionId) {
-      try {
-        const data = JSON.parse(
-          typeof lastMessage === "string" ? lastMessage : lastMessage.data,
-        );
-        if (data.type === "chat_message" && data.sessionId === sessionId) {
-          // Add the message to the chat
-          if (data.role === "assistant") {
-            setIsTyping(false);
-
-            // Generate follow-up questions if enabled
-            let followUpQuestions: string[] | undefined = undefined;
-
-            if (
-              followUpConfig?.enableFollowUpQuestions &&
-              followUpConfig.generateAutomatically
-            ) {
-              // In a real implementation, these would be generated based on the message content
-              // and the configured predefined questions
-              const predefinedSet = followUpConfig.predefinedQuestions[0];
-              if (predefinedSet) {
-                followUpQuestions = predefinedSet.questions.slice(
-                  0,
-                  followUpConfig.maxFollowUpQuestions,
-                );
-              }
-            }
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: data.id || Date.now().toString(),
-                content: data.content,
-                role: data.role,
-                timestamp: new Date(),
-                followUpQuestions,
-              },
-            ]);
-          }
-        }
-      } catch (error) {
-        console.error("Error processing WebSocket message:", error);
-      }
+    if (lastMessage && connected && sessionId) {
+      // This is now handled by the onMessage callback in useWebSocket
     }
-  }, [lastMessage, sessionId, followUpConfig]);
+  }, [lastMessage, connected, sessionId]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom whenever messages change
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [messages, isTyping]);
 
-  // Memoize the initChatSession function to prevent unnecessary re-renders
+  // Initialize chat session
   const initChatSession = useCallback(async () => {
     try {
-      // Clear any existing messages
-      setMessages([]);
-
-      // In preview mode, just add the initial message
       if (previewMode) {
-        // Generate follow-up questions if enabled
-        let followUpQuestions: string[] | undefined = undefined;
+        // For preview mode, set a fake session ID
+        setSessionId("preview-session");
 
-        if (
-          followUpConfig?.enableFollowUpQuestions &&
-          !followUpConfig.generateAutomatically
-        ) {
-          // Show initial follow-up questions if configured to show at start
-          const predefinedSet = followUpConfig.predefinedQuestions[0];
-          if (predefinedSet) {
-            followUpQuestions = predefinedSet.questions.slice(
-              0,
-              followUpConfig.maxFollowUpQuestions,
-            );
-          }
+        // Add initial welcome message if configured
+        if (widgetConfig.initialMessage) {
+          setMessages([
+            {
+              id: "welcome",
+              content: widgetConfig.initialMessage,
+              role: "assistant",
+              timestamp: new Date().toISOString(),
+            },
+          ]);
         }
-
-        setMessages([
-          {
-            id: "initial",
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-            timestamp: new Date(),
-            followUpQuestions,
-          },
-        ]);
         return;
       }
 
-      // Create or resume a chat session
-      const session = await chatService.createSession();
-      setSessionId(session.id);
+      if (!widgetId) {
+        logger.error("Widget ID is required for non-preview mode");
+        return;
+      }
 
-      // Load previous messages if any
-      const history = await chatService.getSessionMessages(session.id);
-      if (history.length > 0) {
-        setMessages(history);
-      } else {
-        // Send initial message
-        if (connected) {
-          sendMessage({
-            type: "chat_message",
-            sessionId: session.id,
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-          });
-        }
+      // Get or create a chat session
+      const session = await widgetClientService.getOrCreateSession(widgetId);
+      setSessionId(session.session_id);
 
-        // Generate follow-up questions if enabled
-        let followUpQuestions: string[] | undefined = undefined;
+      // Fetch existing messages
+      const existingMessages = await widgetClientService.getMessages(session.session_id);
 
-        if (
-          followUpConfig?.enableFollowUpQuestions &&
-          !followUpConfig.generateAutomatically
-        ) {
-          // Show initial follow-up questions if configured to show at start
-          const predefinedSet = followUpConfig.predefinedQuestions[0];
-          if (predefinedSet) {
-            followUpQuestions = predefinedSet.questions.slice(
-              0,
-              followUpConfig.maxFollowUpQuestions,
-            );
+      // Convert API messages to component message format
+      const formattedMessages: Message[] = existingMessages.map((msg: ApiChatMessage) => ({
+        id: msg.id,
+        content: msg.content,
+        role: msg.type === 'user' ? 'user' : msg.type === 'ai' ? 'assistant' : 'system',
+        timestamp: msg.created_at,
+      }));
+
+      setMessages(formattedMessages);
+
+      // Fetch follow-up questions if enabled
+      if (followUpConfig?.enableFollowUpQuestions) {
+        try {
+          const questions = await widgetClientService.getFollowUpQuestions(session.session_id);
+          if (questions.length > 0) {
+            setFollowUpQuestions(questions.map(q => q.content));
           }
+        } catch (error) {
+          logger.error("Error fetching follow-up questions:", error);
         }
-
-        setMessages([
-          {
-            id: "initial",
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-            timestamp: new Date(),
-            followUpQuestions,
-          },
-        ]);
       }
     } catch (error) {
-      console.error("Error initializing chat session:", error);
-      // Even if there's an error, show the initial message in preview mode
-      if (previewMode) {
-        setMessages([
-          {
-            id: "initial",
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-            timestamp: new Date(),
-          },
-        ]);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to initialize chat. Please try again.",
-          variant: "destructive",
-        });
-      }
+      logger.error("Error initializing chat session:", error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to initialize chat session. Please try again.",
+        variant: "destructive",
+      });
     }
-  }, [
-    previewMode,
-    widgetConfig,
-    followUpConfig,
-    connected,
-    sendMessage,
-    toast,
-  ]);
+  }, [previewMode, widgetConfig.initialMessage, widgetId, toast, followUpConfig]);
 
-  // Memoize the sendMessage function to prevent unnecessary re-renders
+  // Send message handler
   const handleSendMessage = useCallback(
     async (content: string) => {
       if (!content.trim()) return;
 
       // Create a new message object
       const newMessage: Message = {
-        id: Date.now().toString(),
+        id: `user-${Date.now()}`,
         content,
         role: "user",
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         status: "sending",
       };
 
-      // Add the message to the UI immediately
+      // Add user message to the list
       setMessages((prev) => [...prev, newMessage]);
 
-      // In preview mode, simulate a response
-      if (previewMode) {
-        setIsTyping(true);
-        setTimeout(() => {
-          setIsTyping(false);
-
-          // Generate follow-up questions if enabled
-          let followUpQuestions: string[] | undefined = undefined;
-
-          if (
-            followUpConfig?.enableFollowUpQuestions &&
-            followUpConfig.generateAutomatically
-          ) {
-            // In a real implementation, these would be generated based on the message content
-            // and the configured predefined questions
-            const predefinedSet = followUpConfig.predefinedQuestions[0];
-            if (predefinedSet) {
-              followUpQuestions = predefinedSet.questions.slice(
-                0,
-                followUpConfig.maxFollowUpQuestions,
-              );
-            }
-          }
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: (Date.now() + 1).toString(),
-              content:
-                "Thanks for your message! I'm here to help with any questions you might have about our products or services.",
-              role: "assistant",
-              timestamp: new Date(),
-              followUpQuestions,
-            },
-          ]);
-        }, 1500);
-        return;
-      }
+      // Scroll to bottom
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
 
       try {
-        // Update message status to sent
+        if (previewMode) {
+          // In preview mode, simulate a response after a delay
+          setIsTyping(true);
+          setTimeout(() => {
+            const aiResponse: Message = {
+              id: `ai-${Date.now()}`,
+              content:
+                "This is a preview response. In a real chat, this would be generated by AI.",
+              role: "assistant",
+              timestamp: new Date().toISOString(),
+            };
+            setMessages((prev) => [
+              ...prev,
+              {
+                ...newMessage,
+                status: "sent",
+              },
+              aiResponse,
+            ]);
+            setIsTyping(false);
+
+            // Add mock follow-up questions if enabled
+            if (followUpConfig?.enableFollowUpQuestions) {
+              const mockQuestions = [
+                "What else would you like to know?",
+                "Can I help with anything else?",
+                "Do you need more details?",
+              ].slice(0, followUpConfig.maxFollowUpQuestions || 3);
+
+              setFollowUpQuestions(mockQuestions);
+            }
+          }, 1500);
+          return;
+        }
+
+        if (!sessionId) {
+          throw new Error("No active chat session");
+        }
+
+        // Update message status to sending
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === newMessage.id ? { ...msg, status: "sent" } : msg,
-          ),
+            msg.id === newMessage.id ? { ...msg, status: "sending" } : msg
+          )
         );
 
-        // Show typing indicator
-        setIsTyping(true);
+        // If WebSocket is connected, send message through WebSocket
+        if (connected) {
+          const wsMessage: WebSocketMessage = {
+            type: "message",
+            data: {
+              content,
+              sessionId,
+            },
+          };
 
-        // Send the message via WebSocket
-        if (connected && sessionId) {
-          sendMessage({
-            type: "chat_message",
-            sessionId,
-            content,
-            role: "user",
-          });
-        } else {
-          // Fallback to REST API if WebSocket is not connected
-          const response = await chatService.sendMessage(sessionId!, content);
-          setIsTyping(false);
+          const sent = sendMessage(wsMessage);
 
-          // Generate follow-up questions if enabled
-          let followUpQuestions: string[] | undefined = undefined;
-
-          if (
-            followUpConfig?.enableFollowUpQuestions &&
-            followUpConfig.generateAutomatically
-          ) {
-            // In a real implementation, these would be generated based on the message content
-            // and the configured predefined questions
-            const predefinedSet = followUpConfig.predefinedQuestions[0];
-            if (predefinedSet) {
-              followUpQuestions = predefinedSet.questions.slice(
-                0,
-                followUpConfig.maxFollowUpQuestions,
-              );
-            }
+          if (!sent) {
+            throw new Error("Failed to send message via WebSocket");
           }
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: response.id,
-              content: response.content,
-              role: "assistant",
-              timestamp: new Date(response.timestamp),
-              followUpQuestions,
-            },
-          ]);
+          // Show typing indicator
+          setIsTyping(true);
+
+          // Update message status to sent
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === newMessage.id ? { ...msg, status: "sent" } : msg
+            )
+          );
+
+          // Note: The response will be handled by the WebSocket onMessage handler
+        } else {
+          // Fallback to REST API if WebSocket is not connected
+          setIsTyping(true);
+
+          // Send message via HTTP API
+          const response = await widgetClientService.sendMessage(sessionId, content);
+
+          // Update the user message status
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === newMessage.id
+                ? {
+                  ...msg,
+                  status: "sent",
+                  id: response.userMessage.id // Update with server-generated ID
+                }
+                : msg
+            )
+          );
+
+          // Add AI response to messages
+          const aiResponse: Message = {
+            id: response.aiMessage.id,
+            content: response.aiMessage.content,
+            role: 'assistant',
+            timestamp: response.aiMessage.created_at,
+          };
+
+          setMessages((prev) => [...prev, aiResponse]);
+          setIsTyping(false);
+
+          // Check for follow-up questions
+          if (followUpConfig?.enableFollowUpQuestions) {
+            try {
+              const questions = await widgetClientService.getFollowUpQuestions(sessionId);
+              if (questions.length > 0) {
+                setFollowUpQuestions(questions.map(q => q.content));
+              } else {
+                setFollowUpQuestions([]);
+              }
+            } catch (error) {
+              logger.error("Error fetching follow-up questions:", error);
+            }
+          }
         }
       } catch (error) {
-        console.error("Error sending message:", error);
+        logger.error("Error sending message:", error);
         // Update message status to error
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === newMessage.id ? { ...msg, status: "error" } : msg,
-          ),
+            msg.id === newMessage.id ? { ...msg, status: "error" } : msg
+          )
         );
         setIsTyping(false);
         toast({
@@ -417,15 +378,17 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
         });
       }
     },
-    [previewMode, connected, sessionId, sendMessage, followUpConfig, toast],
+    [previewMode, connected, sessionId, sendMessage, followUpConfig, toast]
   );
 
   const handleSelectFollowUpQuestion = useCallback(
     (question: string) => {
       // Send the selected follow-up question as a user message
       handleSendMessage(question);
+      // Clear follow-up questions after selection
+      setFollowUpQuestions([]);
     },
-    [handleSendMessage],
+    [handleSendMessage]
   );
 
   const toggleChat = () => {
@@ -467,9 +430,14 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
           allowFeedback={widgetConfig.allowFeedback}
           messagesEndRef={messagesEndRef}
           enableMarkdown={responseConfig?.enableMarkdown}
-          followUpConfig={followUpConfig}
-          onSelectFollowUpQuestion={handleSelectFollowUpQuestion}
         />
+        {followUpQuestions.length > 0 && (
+          <FollowUpQuestions
+            questions={followUpQuestions}
+            onSelectQuestion={handleSelectFollowUpQuestion}
+            primaryColor={widgetConfig.primaryColor}
+          />
+        )}
         <ChatInput
           onSendMessage={handleSendMessage}
           placeholder={widgetConfig.placeholderText}
@@ -513,9 +481,14 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
             allowFeedback={widgetConfig.allowFeedback}
             messagesEndRef={messagesEndRef}
             enableMarkdown={responseConfig?.enableMarkdown}
-            followUpConfig={followUpConfig}
-            onSelectFollowUpQuestion={handleSelectFollowUpQuestion}
           />
+          {followUpQuestions.length > 0 && (
+            <FollowUpQuestions
+              questions={followUpQuestions}
+              onSelectQuestion={handleSelectFollowUpQuestion}
+              primaryColor={widgetConfig.primaryColor}
+            />
+          )}
           <ChatInput
             onSendMessage={handleSendMessage}
             placeholder={widgetConfig.placeholderText}

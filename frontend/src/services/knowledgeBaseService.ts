@@ -17,6 +17,7 @@ import type {
   KnowledgeBaseConfig,
   KnowledgeBaseForContextRule
 } from "../types/knowledgeBase";
+export type { KnowledgeBaseConfig } from "../types/knowledgeBase";
 import { knowledgeBaseCoreApi } from "./api/features/knowledgebase/knowledgebasefeatures";
 import api from './axiosConfig';
 
@@ -217,7 +218,7 @@ class KnowledgeBaseService {
     try {
       // Clear caches that might contain these entries
       this.clearCache();
-      
+
       return await knowledgeBaseCoreApi.bulkDeleteEntries(entryIds);
     } catch (error) {
       console.error('Error deleting entries in bulk:', error);
@@ -275,7 +276,7 @@ class KnowledgeBaseService {
       };
 
       const mergedParams = { ...defaultParams, ...params };
-      
+
       return await knowledgeBaseCoreApi.findSimilar(entryId, mergedParams);
     } catch (error) {
       console.error(`Error finding similar entries for entry ${entryId}:`, error);
@@ -292,9 +293,9 @@ class KnowledgeBaseService {
     try {
       // Clear cache for this knowledge base
       this.clearKnowledgeBaseCache(knowledgeBaseId);
-      
+
       const result = await knowledgeBaseCoreApi.generateEmbeddings(knowledgeBaseId);
-      
+
       return result;
     } catch (error) {
       console.error(`Error generating embeddings for knowledge base ${knowledgeBaseId}:`, error);
@@ -412,7 +413,7 @@ class KnowledgeBaseService {
     try {
       // Fetch all knowledge bases
       const result = await this.getAllKnowledgeBases({ per_page: 100 });
-      
+
       // Handle both paginated and array responses
       let knowledgeBases: KnowledgeBase[];
       if ('data' in result && Array.isArray(result.data)) {
@@ -422,7 +423,7 @@ class KnowledgeBaseService {
       } else {
         knowledgeBases = [];
       }
-      
+
       // Map to format needed for context rules
       return knowledgeBases.map(kb => ({
         id: kb.id,
@@ -460,28 +461,28 @@ class KnowledgeBaseService {
         maxResults: limit,
         // Don't filter by type to get comprehensive results
       });
-      
+
       if (!searchResults || searchResults.length === 0) {
         return "";
       }
-      
+
       // Format results into a context prompt for the AI
       let contextPrompt = "I am providing you with some relevant information from my knowledge base. Please use this information to help answer the user's question if applicable:\n\n";
-      
+
       searchResults.forEach((entry, index) => {
         contextPrompt += `--- Information #${index + 1} from ${entry.knowledge_base?.name || 'Knowledge Base'} ---\n`;
         contextPrompt += `Title: ${entry.title || 'Untitled'}\n`;
         contextPrompt += `Content: ${entry.content}\n`;
-        
+
         if (entry.source_url) {
           contextPrompt += `Source: ${entry.source_url}\n`;
         }
-        
+
         contextPrompt += "\n";
       });
-      
+
       contextPrompt += "When answering the user's question, incorporate the relevant information from above without explicitly mentioning that you're using a knowledge base unless specifically asked about your sources.\n";
-      
+
       return contextPrompt;
     } catch (error) {
       console.error("Error searching knowledge base for AI context:", error);
@@ -501,16 +502,16 @@ class KnowledgeBaseService {
         sort_by: sortBy as any,
         sort_direction: sortDirection as any
       };
-      
+
       const results = await this.getAllKnowledgeBases(params);
-      
+
       // Convert to KnowledgeBaseConfig format
       if (Array.isArray(results)) {
         return results.map(kb => this.toConfigFormat(kb));
       } else if (results && 'data' in results) {
         return results.data.map(kb => this.toConfigFormat(kb));
       }
-      
+
       return [];
     } catch (error) {
       console.error('Error fetching knowledge bases:', error);
@@ -546,7 +547,7 @@ class KnowledgeBaseService {
         is_active: data.is_active,
         metadata: data.metadata
       };
-      
+
       const kb = await this.createKnowledgeBase(params);
       return this.toConfigFormat(kb);
     } catch (error) {
@@ -569,7 +570,7 @@ class KnowledgeBaseService {
         is_active: data.is_active,
         metadata: data.metadata
       };
-      
+
       const kb = await this.updateKnowledgeBase(id, params);
       return this.toConfigFormat(kb);
     } catch (error) {
@@ -603,7 +604,34 @@ class KnowledgeBaseService {
       throw error;
     }
   }
-  
+
+  /**
+   * Sync a knowledge base with its source
+   */
+  async syncKnowledgeBase(id: string): Promise<boolean> {
+    try {
+      // Call the API to sync the knowledge base
+      await api.post(`/api/knowledge-base/${id}/sync`);
+      return true;
+    } catch (error) {
+      console.error(`Error syncing knowledge base ${id}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Query a knowledge base
+   */
+  async query(params: { query: string; limit?: number; contextRuleId?: string; userId?: string }): Promise<any[]> {
+    try {
+      const response = await api.post('/api/knowledge-base/query', params);
+      return response.data || [];
+    } catch (error) {
+      console.error('Error querying knowledge base:', error);
+      throw error;
+    }
+  }
+
   /**
    * Helper method to convert KnowledgeBase to KnowledgeBaseConfig format
    */

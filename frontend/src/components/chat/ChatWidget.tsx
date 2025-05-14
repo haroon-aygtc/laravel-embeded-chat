@@ -1,154 +1,115 @@
 import React, { useState, useEffect, useRef } from "react";
-import ChatHeader from "./ChatHeader";
-import ChatMessages from "./ChatMessages";
-import ChatInput from "./ChatInput";
-import { Button } from "@/components/ui/button";
-import { MessageSquare, X } from "lucide-react";
+import { MessageSquare, X, Send, PaperclipIcon, SmileIcon } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { chatService } from "@/services/chatService";
-import { useAuth } from "@/context/AuthContext";
 import useWebSocket from "@/hooks/useWebSocket";
+import { widgetClientService } from "@/services/widgetClientService";
+import { VisualSettings, BehavioralSettings, ContentSettings } from "@/services/widgetService";
 
-interface ChatWidgetProps {
-  config?: any;
-  previewMode?: boolean;
-  widgetId?: string;
-  onClose?: () => void;
-  embedded?: boolean;
-  isFullPage?: boolean;
-  title?: string;
-  subtitle?: string;
-  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
-  contextMode?: "restricted" | "general";
-  contextName?: string;
-  contextRuleId?: string;
-  primaryColor?: string;
-  avatarSrc?: string;
-  initiallyOpen?: boolean;
-  allowAttachments?: boolean;
-  allowVoice?: boolean;
-  allowEmoji?: boolean;
-  width?: number;
-  height?: number;
-  onSendMessage?: (message: string) => Promise<void>;
-}
-
-interface Message {
+export interface ChatMessage {
   id: string;
   content: string;
-  role: "user" | "assistant" | "system";
-  timestamp: Date;
-  status?: "sending" | "sent" | "error";
+  type: "user" | "system" | "ai";
+  session_id: string;
+  created_at: string;
+  metadata?: Record<string, any>;
 }
 
-const ChatWidget: React.FC<ChatWidgetProps> = ({
-  config,
-  previewMode = false,
+interface ChatWidgetProps {
+  title?: string;
+  subtitle?: string;
+  widgetId?: string;
+  embedded?: boolean;
+  allowAttachments?: boolean;
+  allowEmoji?: boolean;
+  primaryColor?: string;
+  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  initiallyOpen?: boolean;
+  logoUrl?: string;
+  onClose?: () => void;
+  visualSettings?: VisualSettings;
+  contentSettings?: ContentSettings;
+  behavioralSettings?: BehavioralSettings;
+  messages?: ChatMessage[];
+  onSendMessage?: (message: string) => void;
+  isLoading?: boolean;
+}
+
+export const ChatWidget: React.FC<ChatWidgetProps> = ({
+  title = "Chat Assistant",
+  subtitle = "How can I help you today?",
   widgetId,
-  onClose,
   embedded = false,
-  isFullPage,
-  title,
-  subtitle,
-  position,
-  contextMode,
-  contextName,
-  contextRuleId,
-  primaryColor,
-  avatarSrc,
-  initiallyOpen,
-  allowAttachments,
-  allowVoice,
-  allowEmoji,
-  width,
-  height,
+  allowAttachments = false,
+  allowEmoji = true,
+  primaryColor = "#4f46e5",
+  position = "bottom-right",
+  initiallyOpen = false,
+  logoUrl,
+  onClose,
+  visualSettings,
+  contentSettings,
+  behavioralSettings,
+  messages: externalMessages,
   onSendMessage,
+  isLoading: externalLoading
 }) => {
-  const [isOpen, setIsOpen] = useState(previewMode || false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
+  const [message, setMessage] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
-  const { connected, lastMessage, sendMessage } = useWebSocket();
 
-  // Default configuration
-  const defaultConfig = {
-    primaryColor: "#4f46e5",
-    secondaryColor: "#f3f4f6",
-    fontFamily: "Inter",
-    borderRadius: 8,
-    position: "bottom-right",
-    initialMessage: "Hello! How can I help you today?",
-    placeholderText: "Type your message here...",
-    titleText: "Chat Support",
-    subtitleText: "We typically reply within a few minutes",
-    showBranding: true,
-    allowAttachments: false,
-    allowFeedback: true,
-  };
+  // Apply visual settings if provided
+  const finalPrimaryColor = visualSettings?.colors?.primary || primaryColor;
+  const finalPosition = visualSettings?.position || position;
+  const finalTitle = contentSettings?.botName || title;
+  const finalSubtitle = subtitle;
+  const placeholderText = contentSettings?.placeholderText || "Type your message...";
 
-  // Merge provided config with defaults
-  const widgetConfig = {
-    ...defaultConfig,
-    ...config,
-    primaryColor: primaryColor || defaultConfig.primaryColor,
-    titleText: title || defaultConfig.titleText,
-    subtitleText: subtitle || defaultConfig.subtitleText,
-    position: position || defaultConfig.position,
-    placeholderText: defaultConfig.placeholderText,
-    allowAttachments: allowAttachments !== undefined ? allowAttachments : defaultConfig.allowAttachments,
-  };
+  // WebSocket setup if widgetId is provided
+  const wsUrl = widgetId ? `${window.location.protocol.replace('http', 'ws')}//${window.location.host}/api/chat/${widgetId}/ws` : undefined;
+  const ws = useWebSocket(wsUrl);
 
-  // Load widget configuration if widgetId is provided
+  // Use external messages if provided (for embedded mode)
   useEffect(() => {
-    if (widgetId && !previewMode) {
-      loadWidgetConfig();
+    if (externalMessages) {
+      setMessages(externalMessages);
     }
-  }, [widgetId]);
+  }, [externalMessages]);
 
-  const loadWidgetConfig = async () => {
-    try {
-      // Load widget configuration from the server
-      const response = await fetch(`/api/widget/${widgetId}/config`);
-      if (response.ok) {
-        const data = await response.json();
-        // Update the widget configuration
-        // This would be handled by the parent component in a real implementation
-      }
-    } catch (error) {
-      console.error("Error loading widget configuration:", error);
-    }
-  };
-
-  // Initialize chat session
+  // Initialize session and load messages when opened
   useEffect(() => {
-    if (isOpen) {
-      initChatSession();
+    if (isOpen && widgetId && !sessionId && !externalMessages) {
+      initializeSession();
     }
-  }, [isOpen]);
+  }, [isOpen, widgetId, sessionId, externalMessages]);
 
   // Handle WebSocket messages
   useEffect(() => {
-    if (lastMessage && lastMessage.type === "chat_message" && sessionId) {
-      if (lastMessage.sessionId === sessionId) {
-        // Add the message to the chat
-        if (lastMessage.role === "assistant") {
-          setIsTyping(false);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: lastMessage.id || Date.now().toString(),
-              content: lastMessage.content,
-              role: lastMessage.role,
-              timestamp: new Date(),
-            },
-          ]);
+    if (ws.lastMessage && sessionId) {
+      try {
+        const data = typeof ws.lastMessage === 'string'
+          ? JSON.parse(ws.lastMessage)
+          : ws.lastMessage;
+
+        if (data.type === 'chat_message' && data.sessionId === sessionId) {
+          setMessages(prev => [...prev, {
+            id: data.id || `temp-${Date.now()}`,
+            content: data.content,
+            type: data.role === 'user' ? 'user' : 'ai',
+            session_id: sessionId,
+            created_at: new Date().toISOString(),
+            metadata: data.metadata || {}
+          }]);
+          setIsLoading(false);
         }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
       }
     }
-  }, [lastMessage]);
+  }, [ws.lastMessage, sessionId]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -159,167 +120,112 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const initChatSession = async () => {
+  const initializeSession = async () => {
+    if (!widgetId) return;
+
+    setIsLoading(true);
+
     try {
-      // Clear any existing messages
-      setMessages([]);
+      // Create a new session
+      const session = await widgetClientService.createChatSession(widgetId);
+      setSessionId(session.session_id);
 
-      // In preview mode, just add the initial message
-      if (previewMode) {
-        setMessages([
-          {
-            id: "initial",
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-            timestamp: new Date(),
-          },
-        ]);
-        return;
+      // Get initial messages if any
+      const initialMessages = await widgetClientService.getMessages(session.session_id);
+
+      if (initialMessages.length > 0) {
+        setMessages(initialMessages);
       }
 
-      // Create or resume a chat session
-      const session = await chatService.createSession();
-      setSessionId(session.id);
-
-      // Load previous messages if any
-      const history = await chatService.getSession(session.id);
-      if (history.messages.length > 0) {
-        setMessages(history.messages.map(msg => ({
-          id: msg.id,
-          content: msg.content,
-          role: msg.role,
-          timestamp: new Date(msg.timestamp)
-        })));
-      } else {
-        // Send initial message
-        sendMessage({
-          type: "chat_message",
-          sessionId: session.id,
-          content: widgetConfig.initialMessage,
-          role: "assistant",
-        });
-
-        setMessages([
-          {
-            id: "initial",
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-            timestamp: new Date(),
-          },
-        ]);
-      }
+      setIsLoading(false);
     } catch (error) {
-      console.error("Error initializing chat session:", error);
-      // Even if there's an error, show the initial message in preview mode
-      if (previewMode) {
-        setMessages([
-          {
-            id: "initial",
-            content: widgetConfig.initialMessage,
-            role: "assistant",
-            timestamp: new Date(),
-          },
-        ]);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to initialize chat. Please try again.",
-          variant: "destructive",
-        });
-      }
+      console.error('Error initializing chat session:', error);
+      toast({
+        title: "Error",
+        description: "Failed to initialize chat. Please try again.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
     }
   };
 
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim()) return;
+  const handleSendMessage = async () => {
+    if (!message.trim()) return;
 
-    // Call the provided onSendMessage prop if available
+    const trimmedMessage = message.trim();
+    setMessage("");
+
+    // If using external handler (for embedded mode)
     if (onSendMessage) {
-      await onSendMessage(content);
-    }
-
-    // Create a new message object
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content,
-      role: "user",
-      timestamp: new Date(),
-      status: "sending",
-    };
-
-    // Add the message to the UI immediately
-    setMessages((prev) => [...prev, newMessage]);
-
-    // In preview mode, simulate a response
-    if (previewMode) {
-      setIsTyping(true);
-      setTimeout(() => {
-        setIsTyping(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            content:
-              "Thanks for your message! I'm here to help with any questions you might have about our products or services.",
-            role: "assistant",
-            timestamp: new Date(),
-          },
-        ]);
-      }, 1500);
+      onSendMessage(trimmedMessage);
       return;
     }
 
+    if (!sessionId) {
+      toast({
+        title: "Error",
+        description: "Chat session not initialized",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Add message to UI immediately
+    const tempMessage: ChatMessage = {
+      id: `temp-${Date.now()}`,
+      content: trimmedMessage,
+      type: "user",
+      session_id: sessionId,
+      created_at: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, tempMessage]);
+    setIsLoading(true);
+
     try {
-      // Update message status to sent
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === newMessage.id ? { ...msg, status: "sent" } : msg,
-        ),
-      );
-
-      // Show typing indicator
-      setIsTyping(true);
-
-      // Send the message via WebSocket
-      if (connected && sessionId) {
-        sendMessage({
-          type: "chat_message",
+      // Try to send via WebSocket if connected
+      if (ws.connected) {
+        ws.sendMessage({
+          type: 'chat_message',
           sessionId,
-          content,
-          role: "user",
+          content: trimmedMessage,
+          role: 'user'
         });
       } else {
-        // Fallback to REST API if WebSocket is not connected
-        const response = await chatService.sendMessage({
-          sessionId,
-          content,
-          role: "user",
+        // Fallback to REST API
+        const response = await widgetClientService.sendMessage(sessionId, trimmedMessage);
+
+        // Replace temp message with actual one and add AI response
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempMessage.id);
+          return [
+            ...filtered,
+            response.userMessage,
+            response.aiMessage
+          ];
         });
-        setIsTyping(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: response.aiResponse.id,
-            content: response.aiResponse.content,
-            role: "assistant",
-            timestamp: new Date(response.aiResponse.timestamp),
-          },
-        ]);
+
+        setIsLoading(false);
       }
     } catch (error) {
-      console.error("Error sending message:", error);
-      // Update message status to error
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === newMessage.id ? { ...msg, status: "error" } : msg,
-        ),
+      console.error('Error sending message:', error);
+
+      // Mark the message as error
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === tempMessage.id
+            ? { ...m, metadata: { ...m.metadata, error: true } }
+            : m
+        )
       );
-      setIsTyping(false);
+
       toast({
         title: "Error",
         description: "Failed to send message. Please try again.",
         variant: "destructive",
       });
+
+      setIsLoading(false);
     }
   };
 
@@ -327,13 +233,161 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     setIsOpen(!isOpen);
   };
 
-  // Apply custom styles based on configuration
-  const widgetStyle = {
-    fontFamily: widgetConfig.fontFamily,
-    "--primary-color": widgetConfig.primaryColor,
-    "--secondary-color": widgetConfig.secondaryColor,
-    "--border-radius": `${widgetConfig.borderRadius}px`,
-  } as React.CSSProperties;
+  const formatTimestamp = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return '';
+    }
+  };
+
+  // For embedded mode, render the full chat UI without the floating button
+  if (embedded) {
+    return (
+      <div className="flex flex-col h-full bg-white rounded-lg overflow-hidden">
+        {/* Chat Header */}
+        <div
+          className="p-4 flex justify-between items-center"
+          style={{ backgroundColor: finalPrimaryColor }}
+        >
+          <div className="flex items-center">
+            {logoUrl && (
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="h-8 w-8 mr-3 rounded-full object-cover"
+              />
+            )}
+            <div>
+              <h3 className="font-medium text-white">{finalTitle}</h3>
+              {finalSubtitle && (
+                <p className="text-xs text-white/80">{finalSubtitle}</p>
+              )}
+            </div>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded-full hover:bg-white/10 text-white"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
+
+        {/* Messages Container */}
+        <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+          {messages.length === 0 ? (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-gray-400 text-sm">
+                {contentSettings?.welcomeMessage || "Send a message to start chatting"}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.type === "user" ? "justify-end" : "justify-start"
+                    }`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg p-3 ${msg.type === "user"
+                      ? `text-white ml-auto`
+                      : msg.type === "system"
+                        ? "bg-gray-200 text-gray-800"
+                        : "bg-white text-gray-800 shadow-sm"
+                      }`}
+                    style={{
+                      backgroundColor:
+                        msg.type === "user" ? finalPrimaryColor : undefined,
+                    }}
+                  >
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {msg.content}
+                    </p>
+                    <span className="text-xs opacity-70 mt-1 block text-right">
+                      {formatTimestamp(msg.created_at)}
+                    </span>
+                    {msg.metadata?.error && (
+                      <span className="text-xs text-red-500 block mt-1">
+                        Error sending message
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {(isLoading || externalLoading) && (
+                <div className="flex justify-start">
+                  <div className="bg-white text-gray-800 rounded-lg p-3 max-w-[80%] shadow-sm">
+                    <div className="flex space-x-2">
+                      <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" />
+                      <div
+                        className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                        style={{ animationDelay: "0.2s" }}
+                      />
+                      <div
+                        className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                        style={{ animationDelay: "0.4s" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="p-4 border-t">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSendMessage();
+            }}
+            className="flex space-x-2"
+          >
+            {allowAttachments && (
+              <button
+                type="button"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <PaperclipIcon size={20} />
+              </button>
+            )}
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={placeholderText}
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-offset-0"
+              style={{
+                outlineColor: finalPrimaryColor
+              }}
+            />
+            {allowEmoji && (
+              <button
+                type="button"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <SmileIcon size={20} />
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={!message.trim() || isLoading || externalLoading}
+              className="p-2 rounded-lg disabled:opacity-50"
+              style={{ backgroundColor: finalPrimaryColor }}
+            >
+              <Send size={20} className="text-white" />
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // Position classes
   const positionClasses = {
@@ -341,121 +395,160 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({
     "bottom-left": "bottom-4 left-4",
     "top-right": "top-4 right-4",
     "top-left": "top-4 left-4",
-  }[widgetConfig.position];
+  }[finalPosition];
 
-  // If isFullPage is true, render a full-page version
-  if (isFullPage) {
-    return (
-      <div
-        className="chat-widget-container h-full w-full flex flex-col overflow-hidden bg-white"
-        style={widgetStyle}
-      >
-        <ChatHeader
-          title={widgetConfig.titleText}
-          onClose={onClose}
-          primaryColor={widgetConfig.primaryColor}
-        />
-        <ChatMessages
-          messages={messages}
-          isTyping={isTyping}
-          allowFeedback={widgetConfig.allowFeedback}
-          messagesEndRef={messagesEndRef}
-        />
-        <ChatInput
-          onSendMessage={handleSendMessage}
-          placeholder={widgetConfig.placeholderText}
-          allowAttachments={widgetConfig.allowAttachments}
-          allowVoice={allowVoice}
-          allowEmoji={allowEmoji}
-          primaryColor={widgetConfig.primaryColor}
-        />
-        {widgetConfig.showBranding && (
-          <div className="text-center py-2 text-xs text-gray-500">
-            Powered by ChatAdmin
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // If embedded, render the full widget without the toggle button
-  if (embedded) {
-    return (
-      <div
-        className="chat-widget-container h-full flex flex-col overflow-hidden rounded-lg border shadow-lg bg-white"
-        style={widgetStyle}
-      >
-        <ChatHeader
-          title={widgetConfig.titleText}
-          subtitle={widgetConfig.subtitleText}
-          logoUrl={widgetConfig.logoUrl}
-          onClose={onClose}
-          primaryColor={widgetConfig.primaryColor}
-        />
-        <ChatMessages
-          messages={messages}
-          isTyping={isTyping}
-          allowFeedback={widgetConfig.allowFeedback}
-          messagesEndRef={messagesEndRef}
-        />
-        <ChatInput
-          onSendMessage={handleSendMessage}
-          placeholder={widgetConfig.placeholderText}
-          allowAttachments={widgetConfig.allowAttachments}
-          primaryColor={widgetConfig.primaryColor}
-        />
-        {widgetConfig.showBranding && (
-          <div className="text-center py-2 text-xs text-gray-500">
-            Powered by ChatAdmin
-          </div>
-        )}
-      </div>
-    );
-  }
-
+  // For floating widget mode
   return (
-    <div
-      className={`chat-widget fixed ${positionClasses} z-50`}
-      style={widgetStyle}
-    >
+    <div className={`fixed ${positionClasses} z-50`}>
       {isOpen ? (
-        <div className="chat-widget-expanded flex flex-col w-80 h-[500px] rounded-lg border shadow-lg bg-white overflow-hidden">
-          <ChatHeader
-            title={widgetConfig.titleText}
-            subtitle={widgetConfig.subtitleText}
-            logoUrl={widgetConfig.logoUrl}
-            onClose={toggleChat}
-            primaryColor={widgetConfig.primaryColor}
-          />
-          <ChatMessages
-            messages={messages}
-            isTyping={isTyping}
-            allowFeedback={widgetConfig.allowFeedback}
-            messagesEndRef={messagesEndRef}
-          />
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            placeholder={widgetConfig.placeholderText}
-            allowAttachments={widgetConfig.allowAttachments}
-            primaryColor={widgetConfig.primaryColor}
-          />
-          {widgetConfig.showBranding && (
-            <div className="text-center py-2 text-xs text-gray-500">
-              Powered by ChatAdmin
+        <div className="bg-white rounded-lg shadow-lg flex flex-col w-80 h-[500px] overflow-hidden">
+          {/* Chat Header */}
+          <div
+            className="p-4 flex justify-between items-center"
+            style={{ backgroundColor: finalPrimaryColor }}
+          >
+            <div className="flex items-center">
+              {logoUrl && (
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="h-8 w-8 mr-3 rounded-full object-cover"
+                />
+              )}
+              <div>
+                <h3 className="font-medium text-white">{finalTitle}</h3>
+                {finalSubtitle && (
+                  <p className="text-xs text-white/80">{finalSubtitle}</p>
+                )}
+              </div>
             </div>
-          )}
+            <button
+              onClick={toggleChat}
+              className="p-1 rounded-full hover:bg-white/10 text-white"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Messages Container */}
+          <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+            {messages.length === 0 ? (
+              <div className="h-full flex items-center justify-center">
+                <p className="text-gray-400 text-sm">
+                  {contentSettings?.welcomeMessage || "Send a message to start chatting"}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {messages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.type === "user" ? "justify-end" : "justify-start"
+                      }`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg p-3 ${msg.type === "user"
+                        ? `text-white ml-auto`
+                        : msg.type === "system"
+                          ? "bg-gray-200 text-gray-800"
+                          : "bg-white text-gray-800 shadow-sm"
+                        }`}
+                      style={{
+                        backgroundColor:
+                          msg.type === "user" ? finalPrimaryColor : undefined,
+                      }}
+                    >
+                      <p className="text-sm whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </p>
+                      <span className="text-xs opacity-70 mt-1 block text-right">
+                        {formatTimestamp(msg.created_at)}
+                      </span>
+                      {msg.metadata?.error && (
+                        <span className="text-xs text-red-500 block mt-1">
+                          Error sending message
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {(isLoading || externalLoading) && (
+                  <div className="flex justify-start">
+                    <div className="bg-white text-gray-800 rounded-lg p-3 max-w-[80%] shadow-sm">
+                      <div className="flex space-x-2">
+                        <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" />
+                        <div
+                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                          style={{ animationDelay: "0.2s" }}
+                        />
+                        <div
+                          className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"
+                          style={{ animationDelay: "0.4s" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="p-4 border-t">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="flex space-x-2"
+            >
+              {allowAttachments && (
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <PaperclipIcon size={20} />
+                </button>
+              )}
+              <input
+                type="text"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={placeholderText}
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-offset-0"
+                style={{
+                  outlineColor: finalPrimaryColor
+                }}
+              />
+              {allowEmoji && (
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <SmileIcon size={20} />
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!message.trim() || isLoading || externalLoading}
+                className="p-2 rounded-lg disabled:opacity-50"
+                style={{ backgroundColor: finalPrimaryColor }}
+              >
+                <Send size={20} className="text-white" />
+              </button>
+            </form>
+          </div>
         </div>
       ) : (
-        <Button
+        <button
           onClick={toggleChat}
-          className="chat-widget-button h-14 w-14 rounded-full shadow-lg flex items-center justify-center"
-          style={{ backgroundColor: widgetConfig.primaryColor }}
+          className="h-14 w-14 rounded-full shadow-lg flex items-center justify-center"
+          style={{ backgroundColor: finalPrimaryColor }}
         >
           <MessageSquare className="h-6 w-6 text-white" />
-        </Button>
+        </button>
       )}
     </div>
   );
 };
-
-export default ChatWidget;

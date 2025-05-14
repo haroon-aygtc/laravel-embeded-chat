@@ -10,7 +10,6 @@
  * - Rate limiting for message sending
  */
 
-import type { WebSocketMessage } from "@/types/chat";
 import logger from "@/utils/logger";
 
 type MessageCallback = (message: any) => void;
@@ -875,7 +874,7 @@ class WebSocketService {
 
 // Create a singleton instance with a configurable URL from environment variables
 // Default to a secure WebSocket connection if no URL is provided
-const WS_URL = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8080";
+const WS_URL = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:8000";
 
 // Initialize the WebSocket service with production-ready configuration
 const websocketService = new WebSocketService({

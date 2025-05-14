@@ -1,13 +1,15 @@
 import React from "react";
-import ChatWidget from "@/components/chat/ChatWidget";
+import ChatWidgetWithConfig from "@/components/chat/ChatWidgetWithConfig";
 
 const ChatPage = () => {
   return (
     <div className="w-full h-screen">
-      <ChatWidget
-        isFullPage={true}
-        title="AI Chat Assistant"
-        subtitle="Ask me anything about our services"
+      <ChatWidgetWithConfig
+        config={{
+          titleText: "AI Chat Assistant",
+          subtitleText: "Ask me anything about our services"
+        }}
+        embedded={true}
       />
     </div>
   );

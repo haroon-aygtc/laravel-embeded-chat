@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect } from "react";
 import {
   Card,
@@ -44,8 +45,8 @@ import {
   Server,
 } from "lucide-react";
 import { KnowledgeBaseConfig } from "@/services/knowledgeBaseService";
-import knowledgeBaseService from "@/services/knowledgeBaseService";
-import { useToast } from "@/components/ui/toast-container";
+import { knowledgeBaseService } from "@/services/knowledgeBaseService";
+import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 
 const KnowledgeBaseManager = () => {
@@ -66,13 +67,15 @@ const KnowledgeBaseManager = () => {
   // Form state
   const [formData, setFormData] = useState<Partial<KnowledgeBaseConfig>>({
     name: "",
-    type: "api",
-    endpoint: "",
-    apiKey: "",
-    connectionString: "",
-    refreshInterval: 60,
-    parameters: {},
-    isActive: true,
+    source_type: "api",
+    metadata: {
+      endpoint: "",
+      apiKey: "",
+      connectionString: "",
+      refreshInterval: 60,
+      parameters: {},
+    },
+    is_active: true,
   });
 
   // Fetch knowledge bases on component mount
@@ -123,13 +126,15 @@ const KnowledgeBaseManager = () => {
   const handleCreateNew = () => {
     setFormData({
       name: "",
-      type: "api",
-      endpoint: "",
-      apiKey: "",
-      connectionString: "",
-      refreshInterval: 60,
-      parameters: {},
-      isActive: true,
+      source_type: "api",
+      metadata: {
+        endpoint: "",
+        apiKey: "",
+        connectionString: "",
+        refreshInterval: 60,
+        parameters: {},
+      },
+      is_active: true,
     });
     setSelectedKbId(null);
     setIsCreating(true);
@@ -144,11 +149,11 @@ const KnowledgeBaseManager = () => {
   };
 
   const handleSwitchChange = (checked: boolean) => {
-    setFormData((prev) => ({ ...prev, isActive: checked }));
+    setFormData((prev) => ({ ...prev, is_active: checked }));
   };
 
   const handleTypeChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, type: value as any }));
+    setFormData((prev) => ({ ...prev, source_type: value as any }));
   };
 
   const handleParametersChange = (
@@ -156,10 +161,20 @@ const KnowledgeBaseManager = () => {
   ) => {
     try {
       const params = JSON.parse(e.target.value);
-      setFormData((prev) => ({ ...prev, parameters: params }));
+      setFormData((prev) => ({
+        ...prev,
+        metadata: {
+          ...prev.metadata,
+          parameters: params
+        },
+        parametersText: undefined // Clear any previous text if JSON is now valid
+      }));
     } catch (error) {
       // If not valid JSON, store as string to allow user to continue editing
-      setFormData((prev) => ({ ...prev, parametersText: e.target.value }));
+      setFormData((prev) => ({
+        ...prev,
+        parametersText: e.target.value
+      }));
     }
   };
 
@@ -175,8 +190,8 @@ const KnowledgeBaseManager = () => {
       }
 
       if (
-        (formData.type === "api" || formData.type === "vector") &&
-        !formData.endpoint
+        (formData.source_type === "api" || formData.source_type === "file") &&
+        (!formData.metadata || !formData.metadata.endpoint)
       ) {
         toast({
           title: "Validation Error",
@@ -187,7 +202,7 @@ const KnowledgeBaseManager = () => {
         return;
       }
 
-      if (formData.type === "database" && !formData.connectionString) {
+      if (formData.source_type === "database" && (!formData.metadata || !formData.metadata.connectionString)) {
         toast({
           title: "Validation Error",
           description:
@@ -250,35 +265,35 @@ const KnowledgeBaseManager = () => {
     }
 
     try {
-      const success = await knowledgeBaseService.deleteConfig(selectedKbId);
-      if (success) {
-        toast({
-          title: "Success",
-          description: "Knowledge base deleted successfully",
-        });
-        setKnowledgeBases((prev) =>
-          prev.filter((kb) => kb.id !== selectedKbId),
-        );
-        if (knowledgeBases.length > 1) {
-          const newSelectedId = knowledgeBases.find(
-            (kb) => kb.id !== selectedKbId,
-          )?.id;
-          if (newSelectedId) {
-            handleSelectKnowledgeBase(newSelectedId);
-          }
-        } else {
-          setSelectedKbId(null);
-          setFormData({
-            name: "",
-            type: "api",
+      await knowledgeBaseService.deleteConfig(selectedKbId);
+      toast({
+        title: "Success",
+        description: "Knowledge base deleted successfully",
+      });
+      setKnowledgeBases((prev) =>
+        prev.filter((kb) => kb.id !== selectedKbId),
+      );
+      if (knowledgeBases.length > 1) {
+        const newSelectedId = knowledgeBases.find(
+          (kb) => kb.id !== selectedKbId,
+        )?.id;
+        if (newSelectedId) {
+          handleSelectKnowledgeBase(newSelectedId);
+        }
+      } else {
+        setSelectedKbId(null);
+        setFormData({
+          name: "",
+          source_type: "api",
+          metadata: {
             endpoint: "",
             apiKey: "",
             connectionString: "",
             refreshInterval: 60,
             parameters: {},
-            isActive: true,
-          });
-        }
+          },
+          is_active: true,
+        });
       }
     } catch (error) {
       console.error("Error deleting knowledge base:", error);
@@ -363,9 +378,11 @@ const KnowledgeBaseManager = () => {
         return <Globe className="h-4 w-4" />;
       case "database":
         return <Database className="h-4 w-4" />;
-      case "cms":
+      case "scraper":
         return <Server className="h-4 w-4" />;
       case "file":
+        return <FileText className="h-4 w-4" />;
+      case "manual":
         return <FileText className="h-4 w-4" />;
       default:
         return <Globe className="h-4 w-4" />;
@@ -413,16 +430,16 @@ const KnowledgeBaseManager = () => {
                     onClick={() => handleSelectKnowledgeBase(kb.id)}
                   >
                     <div className="flex items-center space-x-2">
-                      {getTypeIcon(kb.type)}
+                      {getTypeIcon(kb.source_type)}
                       <span className="text-sm font-medium truncate max-w-[150px]">
                         {kb.name}
                       </span>
                     </div>
                     <Badge
-                      variant={kb.isActive ? "default" : "outline"}
+                      variant={kb.is_active ? "default" : "outline"}
                       className="text-xs"
                     >
-                      {kb.isActive ? "Active" : "Inactive"}
+                      {kb.is_active ? "Active" : "Inactive"}
                     </Badge>
                   </div>
                 ))
@@ -619,7 +636,7 @@ const KnowledgeBaseManager = () => {
                     <div className="space-y-2">
                       <Label htmlFor="type">Type</Label>
                       <Select
-                        value={formData.type}
+                        value={formData.source_type}
                         onValueChange={handleTypeChange}
                         disabled={!isEditing && !isCreating}
                       >
@@ -640,13 +657,13 @@ const KnowledgeBaseManager = () => {
                   </div>
 
                   {/* Conditional fields based on type */}
-                  {(formData.type === "api" || formData.type === "vector") && (
+                  {(formData.source_type === "api" || formData.source_type === "file") && (
                     <div className="space-y-2">
                       <Label htmlFor="endpoint">API Endpoint</Label>
                       <Input
                         id="endpoint"
-                        name="endpoint"
-                        value={formData.endpoint || ""}
+                        name="metadata.endpoint"
+                        value={formData.metadata?.endpoint || ""}
                         onChange={handleInputChange}
                         placeholder="https://api.example.com/knowledge"
                         disabled={!isEditing && !isCreating}
@@ -654,15 +671,15 @@ const KnowledgeBaseManager = () => {
                     </div>
                   )}
 
-                  {formData.type === "database" && (
+                  {formData.source_type === "database" && (
                     <div className="space-y-2">
                       <Label htmlFor="connectionString">
                         Connection String
                       </Label>
                       <Input
                         id="connectionString"
-                        name="connectionString"
-                        value={formData.connectionString || ""}
+                        name="metadata.connectionString"
+                        value={formData.metadata?.connectionString || ""}
                         onChange={handleInputChange}
                         placeholder="postgresql://user:password@localhost:5432/db"
                         disabled={!isEditing && !isCreating}
@@ -674,8 +691,8 @@ const KnowledgeBaseManager = () => {
                     <Label htmlFor="apiKey">API Key (if required)</Label>
                     <Input
                       id="apiKey"
-                      name="apiKey"
-                      value={formData.apiKey || ""}
+                      name="metadata.apiKey"
+                      value={formData.metadata?.apiKey || ""}
                       onChange={handleInputChange}
                       placeholder="API Key"
                       type="password"
@@ -689,8 +706,8 @@ const KnowledgeBaseManager = () => {
                     </Label>
                     <Input
                       id="refreshInterval"
-                      name="refreshInterval"
-                      value={formData.refreshInterval || 60}
+                      name="metadata.refreshInterval"
+                      value={formData.metadata?.refreshInterval || 60}
                       onChange={handleInputChange}
                       type="number"
                       min="1"
@@ -704,9 +721,9 @@ const KnowledgeBaseManager = () => {
                       id="parameters"
                       name="parameters"
                       value={
-                        formData.parametersText ||
-                        (formData.parameters
-                          ? JSON.stringify(formData.parameters, null, 2)
+                        formData.metadata?.parametersText ||
+                        (formData.metadata?.parameters
+                          ? JSON.stringify(formData.metadata.parameters, null, 2)
                           : "{}")
                       }
                       onChange={handleParametersChange}
@@ -719,7 +736,7 @@ const KnowledgeBaseManager = () => {
                   <div className="flex items-center space-x-2">
                     <Switch
                       id="isActive"
-                      checked={formData.isActive}
+                      checked={formData.metadata?.is_active}
                       onCheckedChange={handleSwitchChange}
                       disabled={!isEditing && !isCreating}
                     />
@@ -735,8 +752,8 @@ const KnowledgeBaseManager = () => {
                             Created:
                           </span>
                           <p className="text-sm">
-                            {formData.createdAt
-                              ? format(new Date(formData.createdAt), "PPpp")
+                            {formData.created_at
+                              ? format(new Date(formData.created_at), "PPpp")
                               : "N/A"}
                           </p>
                         </div>
@@ -745,8 +762,8 @@ const KnowledgeBaseManager = () => {
                             Last Updated:
                           </span>
                           <p className="text-sm">
-                            {formData.updatedAt
-                              ? format(new Date(formData.updatedAt), "PPpp")
+                            {formData.updated_at
+                              ? format(new Date(formData.updated_at), "PPpp")
                               : "N/A"}
                           </p>
                         </div>
@@ -755,8 +772,8 @@ const KnowledgeBaseManager = () => {
                             Last Synced:
                           </span>
                           <p className="text-sm">
-                            {formData.lastSyncedAt
-                              ? format(new Date(formData.lastSyncedAt), "PPpp")
+                            {formData.updated_at
+                              ? format(new Date(formData.updated_at), "PPpp")
                               : "Never"}
                           </p>
                         </div>

@@ -1,7 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
-import logger from "@/utils/logger";
-import { api } from "./api/middleware/apiMiddleware";
-import { chatEndpoints } from "./api/endpoints/chatEndpoints";
+import { v4 as uuidv4 } from 'uuid';
 
 export interface ChatMessage {
     id: string;
@@ -28,165 +25,118 @@ export interface ChatSession {
     contextMode?: 'restricted' | 'general';
 }
 
-const SESSION_STORAGE_KEY = 'chat_sessions';
+// In-memory storage for development/testing
+let sessions: ChatSession[] = [];
 
-// Local storage helper functions
 const loadSessions = (): ChatSession[] => {
     try {
-        const sessionsJson = localStorage.getItem(SESSION_STORAGE_KEY);
-        return sessionsJson ? JSON.parse(sessionsJson) : [];
-    } catch (error) {
-        logger.error('Error loading chat sessions:', error);
+        const saved = localStorage.getItem('chat_sessions');
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        console.error('Failed to load chat sessions from localStorage', e);
         return [];
     }
 };
 
 const saveSessions = (sessions: ChatSession[]): void => {
     try {
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
-    } catch (error) {
-        logger.error('Error saving chat sessions:', error);
+        localStorage.setItem('chat_sessions', JSON.stringify(sessions));
+    } catch (e) {
+        console.error('Failed to save chat sessions to localStorage', e);
     }
 };
 
-// Chat service API
+// Initialize sessions from localStorage if available
+sessions = loadSessions();
+
 export const chatService = {
-    /**
-     * Get all chat sessions
-     */
-    getSessions: async (): Promise<ChatSession[]> => {
-        try {
-            const response = await api.get<ChatSession[]>(chatEndpoints.sessions);
-            if (!response.success || !response.data) {
-                throw new Error('Failed to fetch chat sessions');
-            }
-            return response.data;
-        } catch (error) {
-            logger.error('Error fetching chat sessions:', error);
-            return [];
-        }
-    },
-
-    /**
-     * Get a specific chat session
-     */
-    getSession: async (sessionId: string): Promise<ChatSession | null> => {
-        try {
-            const response = await api.get<ChatSession>(chatEndpoints.sessionById(sessionId));
-            if (!response.success || !response.data) {
-                throw new Error('Failed to fetch chat session');
-            }
-            return response.data;
-        } catch (error) {
-            logger.error(`Error fetching chat session ${sessionId}:`, error);
-            return null;
-        }
-    },
-
     /**
      * Create a new chat session
      */
-    createSession: async (name: string = 'New Chat', contextOptions?: {
-        contextRuleId?: string;
-        contextName?: string;
-        contextMode?: 'restricted' | 'general';
-    }): Promise<ChatSession | null> => {
-        try {
-            const sessionData = {
-                name,
-                ...contextOptions
-            };
+    createSession: async (): Promise<ChatSession> => {
+        const session: ChatSession = {
+            id: uuidv4(),
+            name: `Chat ${sessions.length + 1}`,
+            messages: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
 
-            const response = await api.post<ChatSession>(chatEndpoints.sessions, sessionData);
-            if (!response.success || !response.data) {
-                throw new Error('Failed to create chat session');
-            }
-            return response.data;
-        } catch (error) {
-            logger.error('Error creating chat session:', error);
-            return null;
+        sessions.push(session);
+        saveSessions(sessions);
+        return session;
+    },
+
+    /**
+     * Get all sessions
+     */
+    getSessions: async (): Promise<ChatSession[]> => {
+        return sessions;
+    },
+
+    /**
+     * Get a specific session by ID
+     */
+    getSession: async (id: string): Promise<ChatMessage[]> => {
+        const session = sessions.find(s => s.id === id);
+        return session ? session.messages : [];
+    },
+
+    /**
+     * Send a message in a session
+     */
+    sendMessage: async (sessionId: string, content: string): Promise<{ userMessage: ChatMessage; aiResponse: ChatMessage }> => {
+        const session = sessions.find(s => s.id === sessionId);
+        if (!session) {
+            throw new Error('Session not found');
+        }
+
+        // Create user message
+        const userMessage: ChatMessage = {
+            id: uuidv4(),
+            content,
+            role: 'user',
+            timestamp: new Date().toISOString(),
+        };
+
+        // Create AI response (simulated)
+        const aiResponse: ChatMessage = {
+            id: uuidv4(),
+            content: `This is a simulated response to: "${content}"`,
+            role: 'assistant',
+            timestamp: new Date().toISOString(),
+        };
+
+        // Add messages to session
+        session.messages.push(userMessage, aiResponse);
+        session.updatedAt = new Date().toISOString();
+
+        // Update storage
+        saveSessions(sessions);
+
+        return { userMessage, aiResponse };
+    },
+
+    /**
+     * Clear messages in a session
+     */
+    clearSession: async (id: string): Promise<void> => {
+        const index = sessions.findIndex(s => s.id === id);
+        if (index !== -1) {
+            sessions[index].messages = [];
+            sessions[index].updatedAt = new Date().toISOString();
+            saveSessions(sessions);
         }
     },
 
     /**
-     * Update a chat session (rename, etc.)
+     * Delete a session
      */
-    updateSession: async (sessionId: string, updates: Partial<ChatSession>): Promise<ChatSession | null> => {
-        try {
-            const response = await api.put<ChatSession>(chatEndpoints.sessionById(sessionId), updates);
-            if (!response.success || !response.data) {
-                throw new Error('Failed to update chat session');
-            }
-            return response.data;
-        } catch (error) {
-            logger.error(`Error updating chat session ${sessionId}:`, error);
-            return null;
-        }
-    },
-
-    /**
-     * Delete a chat session
-     */
-    deleteSession: async (sessionId: string): Promise<boolean> => {
-        try {
-            const response = await api.delete<{ message: string }>(chatEndpoints.sessionById(sessionId));
-            return response.success;
-        } catch (error) {
-            logger.error(`Error deleting chat session ${sessionId}:`, error);
-            return false;
-        }
-    },
-
-    /**
-     * Get messages from a chat session
-     */
-    getMessages: async (sessionId: string): Promise<ChatMessage[]> => {
-        try {
-            const response = await api.get<ChatMessage[]>(chatEndpoints.sessionMessages(sessionId));
-            if (!response.success || !response.data) {
-                throw new Error('Failed to fetch chat messages');
-            }
-            return response.data;
-        } catch (error) {
-            logger.error(`Error fetching messages for session ${sessionId}:`, error);
-            return [];
-        }
-    },
-
-    /**
-     * Add a message to a chat session and get AI response
-     */
-    sendMessage: async (sessionId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>): Promise<{
-        userMessage: ChatMessage;
-        aiResponse: ChatMessage;
-    } | null> => {
-        try {
-            const response = await api.post<{
-                userMessage: ChatMessage;
-                aiResponse: ChatMessage;
-            }>(chatEndpoints.sessionMessages(sessionId), message);
-
-            if (!response.success || !response.data) {
-                throw new Error('Failed to send message');
-            }
-
-            return response.data;
-        } catch (error) {
-            logger.error(`Error sending message in session ${sessionId}:`, error);
-            return null;
-        }
-    },
-
-    /**
-     * Clear all messages in a chat session
-     */
-    clearMessages: async (sessionId: string): Promise<boolean> => {
-        try {
-            const response = await api.delete<{ message: string }>(chatEndpoints.sessionMessages(sessionId));
-            return response.success;
-        } catch (error) {
-            logger.error(`Error clearing messages in session ${sessionId}:`, error);
-            return false;
+    deleteSession: async (id: string): Promise<void> => {
+        const index = sessions.findIndex(s => s.id === id);
+        if (index !== -1) {
+            sessions.splice(index, 1);
+            saveSessions(sessions);
         }
     }
 };

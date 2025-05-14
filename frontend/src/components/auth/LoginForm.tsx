@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -12,19 +12,46 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MessageSquare, Lock } from "lucide-react";
+import { getCsrfToken } from "@/utils/auth";
+import logger from "@/utils/logger";
 
 const LoginForm = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const { login, isLoading, error, clearError } = useAuth();
   const navigate = useNavigate();
+  const isSubmittingRef = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(email, password);
-    navigate("/admin/dashboard");
+
+    // Prevent multiple submissions
+    if (isSubmittingRef.current || isLoading) {
+      logger.warn("Preventing duplicate form submission");
+      return;
+    }
+
+    try {
+      // Set submission flag
+      isSubmittingRef.current = true;
+
+      // Get CSRF token first - use consistent approach
+      await getCsrfToken();
+
+      const success = await login(email, password);
+      if (success) {
+        navigate("/admin/dashboard");
+      }
+    } catch (err) {
+      logger.error("Login error:", err);
+    } finally {
+      // Reset submission flag with delay
+      setTimeout(() => {
+        isSubmittingRef.current = false;
+      }, 2000);
+    }
   };
 
   return (
@@ -45,9 +72,16 @@ const LoginForm = () => {
         </CardHeader>
         <CardContent>
           {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+            <Card className="border-red-300 bg-red-50 mt-4">
+              <CardContent className="p-4">
+                <Alert variant="destructive">
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>
+                    {typeof error === 'object' ? JSON.stringify(error) : error}
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -103,8 +137,12 @@ const LoginForm = () => {
                 </div>
               </div>
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Logging in..." : "Login"}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading || isSubmittingRef.current}
+            >
+              {isLoading || isSubmittingRef.current ? "Logging in..." : "Login"}
             </Button>
           </form>
         </CardContent>

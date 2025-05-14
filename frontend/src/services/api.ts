@@ -1,6 +1,21 @@
-import { User, UserActivity, CreateUserDTO } from '@/types';
+/**
+ * @deprecated This file is deprecated and should not be used.
+ * Import directly from the appropriate feature modules:
+ * - Import API client from '@/services/axiosConfig'
+ * - Import auth API from '@/services/api/features/auth'
+ * - Import other feature APIs from '@/services/api/features/{feature}'
+ */
 
-const API_URL = 'http://localhost:8000/api';
+export { default as api } from './axiosConfig';
+export { ensureCsrf } from './axiosConfig';
+
+// Re-export auth API for backward compatibility
+export { authApi } from './api/features/auth';
+
+import { User, UserActivity, CreateUserDTO } from '@/types';
+import logger from "@/utils/logger";
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // Helper function to handle API responses
 const handleResponse = async (response: Response) => {
@@ -9,55 +24,6 @@ const handleResponse = async (response: Response) => {
     throw new Error(error.message || 'An error occurred');
   }
   return response.json();
-};
-
-// Auth API calls
-export const authApi = {
-  login: async (email: string, password: string) => {
-    const response = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include', // Important for cookie-based auth
-    });
-    return handleResponse(response);
-  },
-
-  register: async (name: string, email: string, password: string) => {
-    const response = await fetch(`${API_URL}/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ name, email, password }),
-      credentials: 'include', // Important for cookie-based auth
-    });
-    return handleResponse(response);
-  },
-
-  getProfile: async (token: string) => {
-    const response = await fetch(`${API_URL}/auth/profile`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include', // Important for cookie-based auth
-    });
-    return handleResponse(response);
-  },
-
-  logout: async (token: string) => {
-    const response = await fetch(`${API_URL}/auth/logout`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      credentials: 'include', // Important for cookie-based auth
-    });
-    return handleResponse(response);
-  },
 };
 
 // User API calls

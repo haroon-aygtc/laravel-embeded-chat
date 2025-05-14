@@ -1,142 +1,127 @@
-import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { PaperclipIcon, SendIcon, SmileIcon, MicIcon } from "lucide-react";
+import React, { useState, KeyboardEvent, useRef } from 'react';
+import { Send, Paperclip, Smile } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 
 interface ChatInputProps {
-  onSendMessage?: (message: string) => void;
+  onSendMessage: (message: string) => void;
   placeholder?: string;
-  disabled?: boolean;
   allowAttachments?: boolean;
-  allowVoice?: boolean;
   allowEmoji?: boolean;
-  primaryColor?: string;
+  primaryColor: string;
+  disabled?: boolean;
 }
 
-const ChatInput = ({
-  onSendMessage = () => { },
-  placeholder = "Type your message here...",
-  disabled = false,
-  allowAttachments = true,
-  allowVoice = true,
-  allowEmoji = true,
+const ChatInput: React.FC<ChatInputProps> = ({
+  onSendMessage,
+  placeholder = 'Type your message here...',
+  allowAttachments = false,
+  allowEmoji = false,
   primaryColor,
-}: ChatInputProps) => {
-  const [message, setMessage] = useState("");
+  disabled = false,
+}) => {
+  const [message, setMessage] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (message.trim()) {
-      onSendMessage(message);
-      setMessage("");
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || disabled) return;
+
+    onSendMessage(trimmedMessage);
+    setMessage('');
+
+    // Focus back on the textarea after sending
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Send message on Enter without shift key
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
     }
   };
 
-  // Apply primaryColor to the send button if provided
-  const buttonStyle = primaryColor ? { backgroundColor: primaryColor } : {};
+  const handlePaste = (e: React.ClipboardEvent) => {
+    // Check if paste contains any files and attachments are allowed
+    if (allowAttachments && e.clipboardData.files.length > 0) {
+      // For now, we just log it, but this could be extended to handle file uploads
+      console.log('File pasted:', e.clipboardData.files[0].name);
+    }
+  };
+
+  const handleAttachmentClick = () => {
+    // This would typically open a file picker
+    console.log('Attachment button clicked');
+  };
+
+  const handleEmojiClick = () => {
+    // This would typically open an emoji picker
+    console.log('Emoji button clicked');
+  };
 
   return (
-    <div className="bg-white border-t border-gray-200 p-3 flex items-center gap-2">
-      <form onSubmit={handleSubmit} className="flex w-full items-center gap-2">
-        {allowAttachments && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-500 hover:text-gray-700"
-                  disabled={disabled}
-                >
-                  <PaperclipIcon className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Attach files</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+    <form onSubmit={handleSubmit} className="flex items-end gap-2">
+      {allowAttachments && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handleAttachmentClick}
+          disabled={disabled}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Paperclip className="h-5 w-5" />
+        </Button>
+      )}
 
-        <Input
-          type="text"
-          placeholder={placeholder}
+      <div className="relative flex-1">
+        <Textarea
+          ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          className="flex-1 rounded-full"
+          placeholder={placeholder}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={disabled}
+          className="min-h-[40px] max-h-[120px] resize-none pr-10"
+          style={{
+            outlineColor: primaryColor,
+          }}
         />
 
         {allowEmoji && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-500 hover:text-gray-700"
-                  disabled={disabled}
-                >
-                  <SmileIcon className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Add emoji</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleEmojiClick}
+            disabled={disabled}
+            className="absolute right-2 bottom-2 text-muted-foreground hover:text-foreground"
+          >
+            <Smile className="h-5 w-5" />
+          </Button>
         )}
+      </div>
 
-        {allowVoice && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-500 hover:text-gray-700"
-                  disabled={disabled}
-                >
-                  <MicIcon className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Voice message</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="submit"
-                variant="default"
-                size="icon"
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-full"
-                disabled={disabled || !message.trim()}
-                style={buttonStyle}
-              >
-                <SendIcon className="h-5 w-5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Send message</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </form>
-    </div>
+      <Button
+        type="submit"
+        size="icon"
+        disabled={!message.trim() || disabled}
+        style={{
+          backgroundColor: primaryColor,
+          color: '#ffffff',
+        }}
+      >
+        <Send className="h-5 w-5" />
+      </Button>
+    </form>
   );
 };
 

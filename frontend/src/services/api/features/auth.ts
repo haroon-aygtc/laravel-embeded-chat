@@ -4,8 +4,13 @@
  * This service provides methods for interacting with authentication endpoints.
  */
 
-import { api, ApiResponse } from "../middleware/apiMiddleware";
-import { setAuthToken, removeAuthToken } from "@/utils/auth";
+import api from "@/services/axiosConfig";
+import { ensureCsrf } from "@/services/axiosConfig";
+import { setAuthToken, removeAuthToken, setAuthUser, getCsrfToken } from "@/utils/auth";
+import logger from "@/utils/logger";
+
+// Flag to prevent duplicate register calls
+let isRegisterInProgress = false;
 
 export interface LoginCredentials {
   email: string;
@@ -61,151 +66,199 @@ export const authApi = {
   /**
    * Login with email and password
    */
-  login: async (
-    credentials: LoginCredentials,
-  ): Promise<ApiResponse<AuthResponse>> => {
-    const response = await api.post<AuthResponse>("/auth/login", credentials);
+  login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
+    try {
+      // Get CSRF token first
+      logger.info('Fetching CSRF token before login');
+      await getCsrfToken();
 
-    if (response.success && response.data) {
-      setAuthToken(response.data.token);
+      const response = await api.post<AuthResponse>("/auth/login", credentials);
+
+      if (response.data) {
+        setAuthToken(response.data.token);
+        setAuthUser(response.data.user);
+        logger.info('Login successful');
+      }
+
+      return response.data;
+    } catch (error) {
+      logger.error('Login failed:', error);
+      throw error;
     }
-
-    return response;
   },
 
   /**
    * Register a new user
    */
-  register: async (data: RegisterData): Promise<ApiResponse<AuthResponse>> => {
-    const response = await api.post<AuthResponse>("/auth/register", data);
-
-    if (response.success && response.data) {
-      setAuthToken(response.data.token);
+  register: async (data: RegisterData): Promise<AuthResponse> => {
+    // Prevent duplicate register calls
+    if (isRegisterInProgress) {
+      logger.warn('Registration request already in progress');
+      throw new Error('Registration is already in progress. Please wait.');
     }
 
-    return response;
+    try {
+      isRegisterInProgress = true;
+
+      // Get CSRF token first if needed - use one consistent approach
+      logger.info('Preparing for registration');
+      await getCsrfToken();
+
+      // Make registration request
+      logger.info('Sending registration request');
+      const response = await api.post<AuthResponse>("/auth/register", data);
+
+      // Process successful response
+      if (response.data && response.data.token) {
+        logger.info('Registration successful, storing auth data');
+        // Store the authentication token
+        setAuthToken(response.data.token);
+
+        // Store the user data
+        if (response.data.user) {
+          setAuthUser(response.data.user);
+        }
+      } else {
+        logger.warn('Registration response missing token or user data:', response.data);
+      }
+
+      return response.data;
+    } catch (error) {
+      logger.error('Registration failed:', error);
+      throw error;
+    } finally {
+      // Always reset the flag
+      setTimeout(() => {
+        isRegisterInProgress = false;
+        logger.info('Registration flag reset after timeout');
+      }, 2000); // Add a delay before allowing new register attempts
+    }
   },
 
   /**
    * Logout the current user
    */
-  logout: async (): Promise<ApiResponse<void>> => {
-    const response = await api.post<void>("/auth/logout");
-    removeAuthToken();
-    return response;
+  logout: async (): Promise<void> => {
+    try {
+      await getCsrfToken();
+      await api.post<void>("/auth/logout");
+    } finally {
+      // Clean up regardless of server response
+      removeAuthToken();
+    }
   },
 
   /**
    * Get the current user's profile
    */
-  getCurrentUser: async (): Promise<ApiResponse<User>> => {
-    return api.get<User>("/auth/me");
+  getCurrentUser: async (): Promise<User> => {
+    const response = await api.get<User>("/auth/me");
+    return response.data;
   },
 
   /**
    * Update the current user's profile
    */
-  updateProfile: async (data: Partial<User>): Promise<ApiResponse<User>> => {
-    return api.put<User>("/auth/profile", data);
+  updateProfile: async (data: Partial<User>): Promise<User> => {
+    await getCsrfToken();
+    const response = await api.put<User>("/auth/profile", data);
+    return response.data;
   },
 
   /**
    * Request a password reset
    */
-  requestPasswordReset: async (email: string): Promise<ApiResponse<void>> => {
-    return api.post<void>("/auth/forgot-password", { email });
+  requestPasswordReset: async (email: string): Promise<void> => {
+    await getCsrfToken();
+    await api.post<void>("/auth/forgot-password", { email });
   },
 
   /**
    * Reset password with token
    */
-  resetPassword: async (
-    token: string,
-    password: string,
-  ): Promise<ApiResponse<void>> => {
-    return api.post<void>("/auth/reset-password", { token, password });
+  resetPassword: async (token: string, password: string): Promise<void> => {
+    await getCsrfToken();
+    await api.post<void>("/auth/reset-password", { token, password });
   },
 
   /**
    * Change current user's password
    */
-  changePassword: async (
-    data: PasswordUpdateData,
-  ): Promise<ApiResponse<void>> => {
-    return api.post<void>("/auth/change-password", data);
+  changePassword: async (data: PasswordUpdateData): Promise<void> => {
+    await getCsrfToken();
+    await api.post<void>("/auth/change-password", data);
   },
 
   /**
    * Verify email with token
    */
-  verifyEmail: async (token: string): Promise<ApiResponse<void>> => {
-    return api.post<void>("/auth/verify-email", { token });
+  verifyEmail: async (token: string): Promise<void> => {
+    await getCsrfToken();
+    await api.post<void>("/auth/verify-email", { token });
   },
 
   /**
    * Refresh the authentication token
    */
-  refreshToken: async (): Promise<
-    ApiResponse<{ token: string; expiresAt: string }>
-  > => {
-    const response = await api.post<{ token: string; expiresAt: string }>(
-      "/auth/refresh-token",
-    );
+  refreshToken: async (): Promise<{ token: string; expiresAt: string }> => {
+    await getCsrfToken();
+    const response = await api.post<{ token: string; expiresAt: string }>("/auth/refresh-token");
 
-    if (response.success && response.data) {
+    if (response.data) {
       setAuthToken(response.data.token);
     }
 
-    return response;
+    return response.data;
   },
 
   /**
    * Get all active sessions for the current user
    */
-  getSessions: async (): Promise<ApiResponse<UserSession[]>> => {
-    return api.get<UserSession[]>("/auth/sessions");
+  getSessions: async (): Promise<UserSession[]> => {
+    const response = await api.get<UserSession[]>("/auth/sessions");
+    return response.data;
   },
 
   /**
    * Revoke a specific session
    */
-  revokeSession: async (sessionId: string): Promise<ApiResponse<void>> => {
-    return api.post<void>(`/auth/sessions/${sessionId}/revoke`);
+  revokeSession: async (sessionId: string): Promise<void> => {
+    await getCsrfToken();
+    await api.post<void>(`/auth/sessions/${sessionId}/revoke`);
   },
 
   /**
    * Check if user has a specific role
    */
-  hasRole: async (role: string): Promise<ApiResponse<boolean>> => {
-    return api.get<boolean>(`/auth/has-role/${role}`);
+  hasRole: async (role: string): Promise<boolean> => {
+    const response = await api.get<boolean>(`/auth/has-role/${role}`);
+    return response.data;
   },
 
   /**
    * Change a user's role (admin only)
    */
-  changeUserRole: async (
-    userId: string,
-    role: string,
-  ): Promise<ApiResponse<User>> => {
-    return api.put<User>(`/auth/users/${userId}/role`, { role });
+  changeUserRole: async (userId: string, role: string): Promise<User> => {
+    await getCsrfToken();
+    const response = await api.put<User>(`/auth/users/${userId}/role`, { role });
+    return response.data;
   },
 
   /**
    * Get user by ID (admin only)
    */
-  getUserById: async (userId: string): Promise<ApiResponse<User>> => {
-    return api.get<User>(`/auth/users/${userId}`);
+  getUserById: async (userId: string): Promise<User> => {
+    const response = await api.get<User>(`/auth/users/${userId}`);
+    return response.data;
   },
 
   /**
    * Get all users (admin only)
    */
-  getAllUsers: async (
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<ApiResponse<{ users: User[]; total: number }>> => {
-    return api.get<{ users: User[]; total: number }>(`/auth/users`, {
+  getAllUsers: async (page: number = 1, limit: number = 20): Promise<{ users: User[]; total: number }> => {
+    const response = await api.get<{ users: User[]; total: number }>(`/auth/users`, {
       params: { page, limit },
     });
+    return response.data;
   },
 };

@@ -120,3 +120,41 @@ export interface ContextRulesResponse {
   page: number;
   pageSize: number;
 } 
+
+export interface ContextRuleCreateInput {
+  name: string;
+  description: string;
+  isActive: boolean;
+  priority?: number;
+  contextType?: 'business' | 'general';
+  keywords?: string[];
+  excludedTopics?: string[];
+  promptTemplate?: string;
+  useKnowledgeBases?: boolean;
+  knowledgeBaseIds?: string[];
+  preferredModel?: string;
+  conditions?: Condition[];
+  actions?: Action[];
+} 
+
+export interface ContextRuleUpdateInput {
+  name?: string;
+  description?: string;
+  isActive?: boolean;
+  priority?: number;
+  contextType?: 'business' | 'general';
+  keywords?: string[];
+  excludedTopics?: string[];
+  promptTemplate?: string;
+  useKnowledgeBases?: boolean;
+  knowledgeBaseIds?: string[];
+  preferredModel?: string;
+  conditions?: Condition[];
+  actions?: Action[];
+}       
+
+
+
+
+
+

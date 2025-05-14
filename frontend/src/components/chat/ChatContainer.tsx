@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import ChatMessages from "./ChatMessages";
+import ChatMessages, { Message } from "./ChatMessages";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Send } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import aiService from "@/services/aiService";
-import { FollowUpQuestion } from "@/services/api/features/followupfeatures";
+import { FollowUpQuestion as ApiFollowUpQuestion } from "@/services/api/features/followupfeatures";
 
 // Define internal Message type used by ChatContainer
 interface ContainerMessage {
@@ -16,18 +16,11 @@ interface ContainerMessage {
     role: "user" | "assistant" | "system";
     timestamp: Date;
     status?: "sending" | "sent" | "error";
-    followUpQuestions?: FollowUpQuestion[];
+    followUpQuestions?: ApiFollowUpQuestion[];
 }
 
 // Message interface for ChatMessages component
-interface ChatMessagesMessage {
-    id: string;
-    content: string;
-    role: "user" | "assistant" | "system";
-    timestamp: Date;
-    status?: "sending" | "sent" | "error";
-    followUpQuestions?: string[];
-}
+// We'll use the Message interface from ChatMessages directly
 
 interface ChatContainerProps {
     initialMessages?: ContainerMessage[];
@@ -57,11 +50,15 @@ export default function ChatContainer({
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // Transform ContainerMessage[] to ChatMessagesMessage[]
-    const transformMessages = (messages: ContainerMessage[]): ChatMessagesMessage[] => {
-        return messages.map(message => ({
-            ...message,
-            followUpQuestions: message.followUpQuestions?.map(q => q.question)
+    // Transform ContainerMessage[] to Message[]
+    const transformMessages = (messages: ContainerMessage[]): Message[] => {
+        return messages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            role: msg.role,
+            timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp as string,
+            status: msg.status,
+            followUpQuestions: msg.followUpQuestions?.map(q => q.question) || []
         }));
     };
 

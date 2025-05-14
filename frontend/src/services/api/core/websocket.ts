@@ -69,7 +69,7 @@ export class WebSocketService {
     this.config = {
       url: env.WS_PORT
         ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:${env.WS_PORT}`
-        : "ws://localhost:8080",
+        : "ws://localhost:8000",
       autoReconnect: true,
       maxReconnectAttempts: 5,
       heartbeatIntervalMs: 30000,

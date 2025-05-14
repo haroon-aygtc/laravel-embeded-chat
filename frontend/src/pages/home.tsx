@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import ChatWidget from "@/components/chat/ChatWidget";
+import { ChatWidget } from "@/components/chat/ChatWidget";
 
 const Home = () => {
   const [searchParams] = useSearchParams();
@@ -125,22 +125,15 @@ const Home = () => {
   return (
     <div className="w-full h-screen">
       <ChatWidget
-        isFullPage={true}
         title={params.title}
         subtitle={params.subtitle}
         position={params.position}
-        contextMode={params.contextMode}
-        contextName={params.contextName}
-        contextRuleId={params.contextRuleId}
         primaryColor={params.primaryColor}
-        avatarSrc={params.avatarSrc}
         embedded={true}
         initiallyOpen={params.autoOpen}
         allowAttachments={params.allowAttachments}
-        allowVoice={params.allowVoice}
         allowEmoji={params.allowEmoji}
-        width={params.width}
-        height={params.height}
+        widgetId={params.widgetId}
         onSendMessage={handleSendMessage}
       />
     </div>
