@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import ChatHeader from "./ChatHeader";
 import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
-import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { chatService } from "@/services/chatService";
-import { useAuth } from "@/context/AuthContext";
 import useChatWebSocket from "@/hooks/useChatWebSocket";
 import { api } from "@/services/api/core/apiClient";
+import { widgetClientService } from "@/services/widgetClientService";
 
 interface VisualSettings {
   primaryColor?: string;
@@ -19,47 +18,72 @@ interface VisualSettings {
 
 interface ContentSettings {
   allowAttachments?: boolean;
-  allowVoice?: boolean;
   allowEmoji?: boolean;
+  welcomeMessage?: string;
 }
 
-interface ChatWidgetProps {
-  title?: string;
-  subtitle?: string | null;
-  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
-  initiallyOpen?: boolean;
-  allowAttachments?: boolean;
-  allowVoice?: boolean;
-  allowEmoji?: boolean;
-  width?: number;
-  height?: number;
-  onSendMessage?: (message: string) => Promise<void>;
-  messages?: Message[];
-  isLoading?: boolean;
-  visualSettings?: VisualSettings;
-  contentSettings?: ContentSettings;
-}
+
 
 interface Message {
   id: string;
   content: string;
   role: "user" | "assistant" | "system";
-  timestamp: Date;
+  timestamp: string;
   status?: "sending" | "sent" | "error";
+  created_at?: string;
+  metadata?: {
+    error?: boolean;
+  };
+}
+
+interface ChatWidgetProps {
+  config?: any;
+  previewMode?: boolean;
+  widgetId?: string;
+  onClose?: () => void;
+  embedded?: boolean;
+  isFullPage?: boolean;
+  title?: string;
+  subtitle?: string;
+  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  primaryColor?: string;
+  initiallyOpen?: boolean;
+  allowAttachments?: boolean;
+  allowEmoji?: boolean;
+  visualSettings?: VisualSettings;
+  contentSettings?: ContentSettings;
+  messages?: Message[];
+  isLoading?: boolean;
+  onSendMessage?: (message: string) => Promise<void>;
 }
 
 function ChatWidget({
-  config, previewMode = false, widgetId, onClose, embedded = false, isFullPage, title, subtitle, position, contextMode, contextName, contextRuleId, primaryColor, avatarSrc, initiallyOpen, allowAttachments, allowVoice, allowEmoji, width, height, onSendMessage: externalSendMessage, visualSettings, contentSettings, messages: externalMessages, isLoading,
-}) {
+  config,
+  previewMode = false,
+  widgetId,
+  onClose,
+  embedded = false,
+  isFullPage,
+  title,
+  subtitle,
+  position = "bottom-right",
+  primaryColor = "#4f46e5",
+  initiallyOpen,
+  allowAttachments = false,
+  allowEmoji = false,
+  visualSettings,
+  contentSettings,
+  messages: externalMessages,
+  isLoading: externalLoading = false,
+  onSendMessage: externalSendMessage
+}: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(previewMode || initiallyOpen || false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(externalMessages || []);
   const [isTyping, setIsTyping] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
 
   // Generate client ID for anonymous users
   const [clientId] = useState<string>(() => {
@@ -121,7 +145,7 @@ function ChatWidget({
   const loadWidgetConfig = async () => {
     try {
       // Load widget configuration from the server
-      const response = await api.get(`/widget/${widgetId}/config`);
+      await api.get(`/widget/${widgetId}/config`);
 
       // Update the widget configuration if needed
       // This would be handled based on the response structure
@@ -153,7 +177,7 @@ function ChatWidget({
             id: msg.id,
             content: msg.content,
             role: msg.role as "user" | "assistant" | "system",
-            timestamp: new Date(msg.created_at),
+            timestamp: msg.created_at || new Date().toISOString(),
             status: 'sent' as const,
           }))
         ]);
@@ -191,13 +215,13 @@ function ChatWidget({
       setSessionId(session.session_id);
 
       // Load previous messages if any
-      const history = await chatService.getSession(session.id);
+      const history = await chatService.getSession(session.session_id);
       if (history.messages && history.messages.length > 0) {
         setMessages(history.messages.map(msg => ({
           id: msg.id,
           content: msg.content,
           role: msg.role,
-          timestamp: new Date(msg.timestamp)
+          timestamp: typeof msg.timestamp === 'string' ? msg.timestamp : new Date(msg.timestamp).toISOString()
         })));
       } else {
         // Add initial message locally
@@ -206,7 +230,7 @@ function ChatWidget({
             id: "initial",
             content: widgetConfig.initialMessage,
             role: "assistant",
-            timestamp: new Date(),
+            timestamp: new Date().toISOString(),
           },
         ]);
       }
@@ -234,7 +258,7 @@ function ChatWidget({
       id: Date.now().toString(),
       content,
       role: "user",
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       status: "sending",
     };
 
@@ -252,7 +276,7 @@ function ChatWidget({
             id: `response-${Date.now()}`,
             content: "This is a simulated response in preview mode.",
             role: "assistant",
-            timestamp: new Date(),
+            timestamp: new Date().toISOString(),
           },
         ]);
       }, 1500);
@@ -264,9 +288,6 @@ function ChatWidget({
       setMessages((prev) => prev.map((msg) => msg.id === newMessage.id ? { ...msg, status: "sent" } : msg
       )
       );
-
-    setMessages(prev => [...prev, tempMessage]);
-    setIsLoading(true);
 
       // If WebSocket is connected, the server will automatically broadcast the response
       // We'll still call the REST API to send the message through the regular flow
@@ -284,7 +305,9 @@ function ChatWidget({
               id: response.aiResponse.id,
               content: response.aiResponse.content,
               role: "assistant",
-              timestamp: new Date(response.aiResponse.timestamp),
+              timestamp: typeof response.aiResponse.timestamp === 'string'
+                ? response.aiResponse.timestamp
+                : new Date(response.aiResponse.timestamp).toISOString(),
             },
           ]);
         }
@@ -334,34 +357,12 @@ function ChatWidget({
     return (
       <div className="flex flex-col h-full bg-white rounded-lg overflow-hidden">
         {/* Chat Header */}
-        <div
-          className="p-4 flex justify-between items-center"
-          style={{ backgroundColor: finalPrimaryColor }}
-        >
-          <div className="flex items-center">
-            {logoUrl && (
-              <img
-                src={logoUrl}
-                alt="Logo"
-                className="h-8 w-8 mr-3 rounded-full object-cover"
-              />
-            )}
-            <div>
-              <h3 className="font-medium text-white">{finalTitle}</h3>
-              {finalSubtitle && (
-                <p className="text-xs text-white/80">{finalSubtitle}</p>
-              )}
-            </div>
-          </div>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1 rounded-full hover:bg-white/10 text-white"
-            >
-              <X size={18} />
-            </button>
-          )}
-        </div>
+        <ChatHeader
+          title={widgetConfig.titleText}
+          subtitle={widgetConfig.subtitleText}
+          logoUrl={widgetConfig.logoUrl}
+          onClose={onClose}
+          primaryColor={widgetConfig.primaryColor} />
 
         {/* Messages Container */}
         <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
@@ -376,26 +377,25 @@ function ChatWidget({
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex ${msg.type === "user" ? "justify-end" : "justify-start"
-                    }`}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-lg p-3 ${msg.type === "user"
+                    className={`max-w-[80%] rounded-lg p-3 ${msg.role === "user"
                       ? `text-white ml-auto`
-                      : msg.type === "system"
+                      : msg.role === "system"
                         ? "bg-gray-200 text-gray-800"
                         : "bg-white text-gray-800 shadow-sm"
                       }`}
                     style={{
                       backgroundColor:
-                        msg.type === "user" ? finalPrimaryColor : undefined,
+                        msg.role === "user" ? primaryColor : undefined,
                     }}
                   >
                     <p className="text-sm whitespace-pre-wrap break-words">
                       {msg.content}
                     </p>
                     <span className="text-xs opacity-70 mt-1 block text-right">
-                      {formatTimestamp(msg.created_at)}
+                      {msg.created_at ? formatTimestamp(msg.created_at) : ''}
                     </span>
                     {msg.metadata?.error && (
                       <span className="text-xs text-red-500 block mt-1">
@@ -428,50 +428,18 @@ function ChatWidget({
         </div>
 
         {/* Input Area */}
-        <div className="p-4 border-t">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="flex space-x-2"
-          >
-            {allowAttachments && (
-              <button
-                type="button"
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <PaperclipIcon size={20} />
-              </button>
-            )}
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={placeholderText}
-              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-offset-0"
-              style={{
-                outlineColor: finalPrimaryColor
-              }}
-            />
-            {allowEmoji && (
-              <button
-                type="button"
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <SmileIcon size={20} />
-              </button>
-            )}
-            <button
-              type="submit"
-              disabled={!message.trim() || isLoading || externalLoading}
-              className="p-2 rounded-lg disabled:opacity-50"
-              style={{ backgroundColor: finalPrimaryColor }}
-            >
-              <Send size={20} className="text-white" />
-            </button>
-          </form>
-        </div>
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          placeholder={widgetConfig.placeholderText}
+          allowAttachments={widgetConfig.allowAttachments}
+          allowEmoji={allowEmoji}
+          primaryColor={widgetConfig.primaryColor}
+          onTypingStatusChange={handleTypingStatusChange} />
+        {widgetConfig.showBranding && (
+          <div className="text-center py-2 text-xs text-gray-500">
+            Powered by ChatAdmin
+          </div>
+        )}
       </div>
     );
   }
@@ -482,14 +450,13 @@ function ChatWidget({
     "bottom-left": "bottom-4 left-4",
     "top-right": "top-4 right-4",
     "top-left": "top-4 left-4",
-  }[finalPosition];
+  }[position];
 
   // If isFullPage is true, render a full-page version
   if (isFullPage) {
     return (
       <div
         className="chat-widget-container h-full w-full flex flex-col overflow-hidden bg-white"
-        style={widgetStyle}
       >
         <ChatHeader
           title={widgetConfig.titleText}
@@ -504,7 +471,6 @@ function ChatWidget({
           onSendMessage={handleSendMessage}
           placeholder={widgetConfig.placeholderText}
           allowAttachments={widgetConfig.allowAttachments}
-          allowVoice={allowVoice}
           allowEmoji={allowEmoji}
           primaryColor={widgetConfig.primaryColor}
           onTypingStatusChange={handleTypingStatusChange} />
@@ -522,7 +488,6 @@ function ChatWidget({
     return (
       <div
         className="chat-widget-container h-full flex flex-col overflow-hidden rounded-lg border shadow-lg bg-white"
-        style={widgetStyle}
       >
         <ChatHeader
           title={widgetConfig.titleText}
@@ -539,7 +504,6 @@ function ChatWidget({
           onSendMessage={handleSendMessage}
           placeholder={widgetConfig.placeholderText}
           allowAttachments={widgetConfig.allowAttachments}
-          allowVoice={allowVoice}
           allowEmoji={allowEmoji}
           primaryColor={widgetConfig.primaryColor}
           onTypingStatusChange={handleTypingStatusChange} />
@@ -555,7 +519,6 @@ function ChatWidget({
   return (
     <div
       className={`chat-widget fixed ${positionClasses} z-50`}
-      style={widgetStyle}
     >
       {isOpen ? (
         <div className="chat-widget-expanded flex flex-col w-80 h-[500px] rounded-lg border shadow-lg bg-white overflow-hidden">
@@ -574,7 +537,6 @@ function ChatWidget({
             onSendMessage={handleSendMessage}
             placeholder={widgetConfig.placeholderText}
             allowAttachments={widgetConfig.allowAttachments}
-            allowVoice={allowVoice}
             allowEmoji={allowEmoji}
             primaryColor={widgetConfig.primaryColor}
             onTypingStatusChange={handleTypingStatusChange} />
@@ -588,7 +550,7 @@ function ChatWidget({
         <button
           onClick={toggleChat}
           className="h-14 w-14 rounded-full shadow-lg flex items-center justify-center"
-          style={{ backgroundColor: finalPrimaryColor }}
+          style={{ backgroundColor: primaryColor }}
         >
           <MessageSquare className="h-6 w-6 text-white" />
         </button>

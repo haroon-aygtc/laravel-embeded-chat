@@ -21,6 +21,10 @@ use App\Http\Controllers\Api\Widget\WidgetController;
 use App\Http\Controllers\Api\Widget\PublicWidgetController;
 use App\Http\Controllers\Api\Chat\PublicChatController;
 use App\Http\Controllers\Api\WebSocket\WebSocketController;
+use Laravel\Sanctum\Http\Controllers\CsrfCookieController;
+
+// Sanctum CSRF cookie route
+Route::get('/sanctum/csrf-cookie', [CsrfCookieController::class, 'show']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -192,7 +196,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/generate', [FollowUpController::class, 'generateFollowUps']);
         Route::post('/process', [FollowUpController::class, 'processSelectedFollowUp']);
     });
-    
+
     // Widget management routes (authenticated)
     Route::prefix('widgets')->group(function () {
         Route::get('/', [WidgetController::class, 'index']);
@@ -229,21 +233,21 @@ Route::group(['prefix' => 'knowledge-base', 'middleware' => ['auth:sanctum']], f
     Route::get('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@show');
     Route::put('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@update');
     Route::delete('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@destroy');
-    
+
     // Knowledge Base entries
     Route::get('/{id}/entries', 'Api\KnowledgeBase\KnowledgeBaseController@getEntries');
     Route::post('/{id}/entries', 'Api\KnowledgeBase\KnowledgeBaseController@addEntry');
     Route::put('/entries/{entryId}', 'Api\KnowledgeBase\KnowledgeBaseController@updateEntry');
     Route::delete('/entries/{entryId}', 'Api\KnowledgeBase\KnowledgeBaseController@deleteEntry');
-    
+
     // Search and knowledge retrieval
     Route::post('/search', 'Api\KnowledgeBase\KnowledgeBaseController@search');
     Route::post('/advanced-search', 'Api\KnowledgeBase\KnowledgeBaseController@advancedSearch');
-    
+
     // Import/export
     Route::post('/{id}/export', 'Api\KnowledgeBase\KnowledgeBaseController@export');
     Route::post('/import', 'Api\KnowledgeBase\KnowledgeBaseController@import');
-    
+
     // Vector search and embeddings
     Route::post('/semantic-search', 'Api\KnowledgeBase\VectorSearchController@semanticSearch');
     Route::post('/hybrid-search', 'Api\KnowledgeBase\VectorSearchController@hybridSearch');
@@ -275,7 +279,7 @@ Route::prefix('public')->group(function () {
         Route::get('/{id}/config', [PublicWidgetController::class, 'getConfig']);
         Route::post('/{id}/sessions', [PublicWidgetController::class, 'createChatSession']);
     });
-    
+
     // Chat functionality for embedded widgets
     Route::prefix('chat')->group(function () {
         Route::get('/sessions/{sessionId}/messages', [PublicChatController::class, 'getMessages']);

@@ -1,18 +1,14 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { PaperclipIcon, SendIcon, SmileIcon, MicIcon } from "lucide-react";
-import debounce from 'lodash/debounce';
+import { Paperclip, Send, Smile } from "lucide-react";
+// @ts-ignore
+import debounce from "lodash/debounce";
 
 interface ChatInputProps {
   onSendMessage: (message: string) => Promise<void>;
   placeholder?: string;
+  disabled?: boolean;
   allowAttachments?: boolean;
   allowEmoji?: boolean;
   primaryColor?: string;
@@ -24,7 +20,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   placeholder = "Type your message here...",
   disabled = false,
   allowAttachments = true,
-  allowVoice = true,
   allowEmoji = true,
   primaryColor = '#4F46E5',
   onTypingStatusChange
@@ -112,6 +107,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </Button>
       )}
 
+      <div className="relative flex-1">
         <Textarea
           placeholder={placeholder}
           value={message}
