@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import {
     getAuthUser,
     setAuthUser,
@@ -68,8 +68,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [errors, setErrors] = useState<Record<string, string[]> | undefined>(undefined);
     // Prevent duplicate API calls
     const [isProcessing, setIsProcessing] = useState(false);
-    const [authInitialized, setAuthInitialized] = useState(false);
-    const authInitStarted = useRef(false);
     const navigate = useNavigate();
 
     // Function to clear error state
@@ -80,16 +78,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Initialize app - fetch user data and ensure CSRF token
     const initializeAuth = async () => {
-        // Prevent concurrent initializations
-        if (authInitStarted.current) {
-            logger.info('Auth initialization already in progress, skipping duplicate call');
-            return;
-        }
-
-        // Set initialization flag
-        authInitStarted.current = true;
         setIsLoading(true);
-
         try {
             // Always fetch CSRF token first - critical for maintaining session
             try {
@@ -129,15 +118,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setUser(null);
         } finally {
             setIsLoading(false);
-            setAuthInitialized(true);
         }
     };
 
     useEffect(() => {
-        // Only initialize once
-        if (!authInitialized && !authInitStarted.current) {
-            initializeAuth();
-        }
+        initializeAuth();
 
         // Set up an interval to refresh the CSRF token periodically
         const csrfRefreshInterval = setInterval(async () => {
@@ -152,7 +137,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return () => {
             clearInterval(csrfRefreshInterval);
         };
-    }, [authInitialized]);
+    }, []);
 
     // Debug user authentication status
     useEffect(() => {

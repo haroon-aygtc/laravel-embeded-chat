@@ -79,10 +79,8 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
         return <PageLoader />;
     }
 
-    // Only redirect authenticated users away from login/register pages
-    // This prevents infinite redirect loops
     if (isAuthenticated) {
-        return <Navigate to="/dashboard" replace />;
+        return <Navigate to="/dashboard" />;
     }
 
     return <>{children}</>;
@@ -93,13 +91,13 @@ const AppRoutes = () => {
         <Suspense fallback={<PageLoader />}>
             <Routes>
                 {/* Public routes */}
-                <Route path="/" element={<Navigate to="/login" replace />} />
+                <Route path="/" element={<Navigate to="/login" />} />
                 <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
                 <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
                 <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
                 <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
 
-                {/* Error pages - don't apply redirects to these */}
+                {/* Error pages */}
                 <Route path="/error" element={<ErrorPage />} />
                 <Route path="/unauthorized" element={<ErrorPage />} />
 
@@ -112,7 +110,7 @@ const AppRoutes = () => {
                 {/* Admin routes */}
                 <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
                 <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
-                <Route path="/admin/user/roles" element={<AdminRoute><AdminUserRolesPage /></AdminRoute>} />
+                <Route path="/admin/users/roles" element={<AdminRoute><AdminUserRolesPage /></AdminRoute>} />
                 <Route path="/admin/ai-providers" element={<AdminRoute><AdminAiProvidersPage /></AdminRoute>} />
                 <Route path="/admin/knowledge-base" element={<AdminRoute><AdminKnowledgeBasePage /></AdminRoute>} />
                 <Route path="/admin/context-rules" element={<AdminRoute><AdminContextRulesPage /></AdminRoute>} />
@@ -120,7 +118,7 @@ const AppRoutes = () => {
                 <Route path="/admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
 
                 {/* Fallback route */}
-                <Route path="*" element={<Navigate to="/error" replace />} />
+                <Route path="*" element={<Navigate to="/error" />} />
             </Routes>
         </Suspense>
     );

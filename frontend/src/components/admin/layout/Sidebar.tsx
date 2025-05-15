@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
     ChevronLeft,
@@ -96,19 +96,6 @@ const Sidebar = ({ collapsed, onToggleCollapse }: SidebarProps) => {
 
     // Track expanded menu items
     const [expandedItems, setExpandedItems] = React.useState<Record<string, boolean>>({});
-
-    // Auto-expand sections based on current route
-    useEffect(() => {
-        const currentPath = location.pathname;
-
-        // Auto-expand Users section when on role management page
-        if (currentPath.includes('/admin/user/roles')) {
-            setExpandedItems(prev => ({
-                ...prev,
-                '/admin/users': true
-            }));
-        }
-    }, [location.pathname]);
 
     // Check if the current path matches a menu item or its subitems
     const isActiveItem = (item: any) => {

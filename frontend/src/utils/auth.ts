@@ -7,15 +7,12 @@
 import { AUTH_USER_KEY } from "@/config/constants";
 import logger from "@/utils/logger";
 import { env } from "@/config/env";
-// Use the consistent API base URL
-import { env as envConfig } from "@/config/env";
 
 // This flag prevents multiple concurrent CSRF token fetches
 let isRequestingCsrfToken = false;
 let csrfPromise: Promise<void> | null = null;
 const CSRF_TIMESTAMP_KEY = 'csrf_fetch_timestamp';
-const CSRF_MIN_INTERVAL = 60000; // Increase to 60 seconds minimum between fetches
-const CSRF_TOKEN_FLAG = 'csrf_token_valid';
+const CSRF_MIN_INTERVAL = 5000; // 5 seconds minimum between fetches
 
 // CRITICAL FIX: Use session/page-level storage instead of a module-level variable
 // to prevent the flag from persisting across navigation events
@@ -25,14 +22,6 @@ const getCsrfRequestFlag = (): boolean => {
 
 const setCsrfRequestFlag = (value: boolean): void => {
   sessionStorage.setItem('csrf_requested_flag', value ? 'true' : 'false');
-};
-
-const setCsrfTokenValid = (valid: boolean): void => {
-  sessionStorage.setItem(CSRF_TOKEN_FLAG, valid ? 'true' : 'false');
-};
-
-const isCsrfTokenValid = (): boolean => {
-  return sessionStorage.getItem(CSRF_TOKEN_FLAG) === 'true';
 };
 
 const updateCsrfFetchTimestamp = (): void => {
@@ -116,16 +105,16 @@ const wasCsrfFetchedRecently = (): boolean => {
  * This implementation uses a singleton pattern to absolutely prevent multiple concurrent calls
  */
 export const getCsrfToken = async (): Promise<void> => {
-  // If we already have a valid CSRF token, no need to fetch again
-  if (isCsrfTokenValid()) {
-    logger.debug('Using cached CSRF token status - already valid');
+  // CRITICAL FIX: If we already requested a token during this page load, just return
+  // This is a drastic measure to prevent the infinite loop
+  if (getCsrfRequestFlag()) {
+    logger.info('CSRF token already requested in this session, preventing additional requests');
     return;
   }
 
-  // Check if we already requested a token during this session and limit to once per session
-  if (getCsrfRequestFlag() && wasCsrfFetchedRecently()) {
-    logger.info('CSRF token already requested recently, preventing additional requests');
-    setCsrfTokenValid(true); // Assume it's valid to prevent more requests
+  // Check if CSRF was fetched very recently to prevent rapid calls
+  if (wasCsrfFetchedRecently()) {
+    logger.debug('CSRF token was fetched recently, skipping redundant fetch');
     return;
   }
 
@@ -137,7 +126,6 @@ export const getCsrfToken = async (): Promise<void> => {
 
   if (xsrfToken) {
     logger.debug('CSRF token already exists in cookies');
-    setCsrfTokenValid(true);
     return;
   }
 
@@ -153,14 +141,14 @@ export const getCsrfToken = async (): Promise<void> => {
   isRequestingCsrfToken = true;
   updateCsrfFetchTimestamp();
 
-  // Set the global flag to prevent future calls
+  // CRITICAL FIX: Set the global flag to prevent future calls
   setCsrfRequestFlag(true);
 
   // Create a new promise
   csrfPromise = (async () => {
     try {
-      // Use the consistent API base URL from environment
-      const baseUrl = envConfig.API_BASE_URL.replace(/\/api\/?$/, '');
+      // Use the full URL with the correct port (8000 for Laravel)
+      const baseUrl = (env.API_BASE_URL || 'http://localhost:9000').replace(/\/api\/?$/, '');
       const csrfUrl = `${baseUrl}/sanctum/csrf-cookie`;
 
       logger.info('Fetching CSRF token from:', csrfUrl);
@@ -190,7 +178,6 @@ export const getCsrfToken = async (): Promise<void> => {
         logger.warn('XSRF-TOKEN cookie was not set in the response, but no error occurred');
       } else {
         logger.info('CSRF token fetch successful');
-        setCsrfTokenValid(true);
       }
     } catch (error) {
       logger.error('❌ Failed to fetch CSRF cookie:', error);

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { roleApi, UserPermissions } from '@/services/api/features/roleManagement';
 import { useAuth } from '@/context/AuthContext';
 import logger from '@/utils/logger';
@@ -57,16 +57,8 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
     const { isAuthenticated, user } = useAuth();
     const [userPermissions, setUserPermissions] = useState<UserPermissions | null>(null);
     const [loading, setLoading] = useState(true);
-    const isLoadingPermissions = useRef(false);
-    const permissionsLoaded = useRef(false);
 
     const loadPermissions = async () => {
-        // Prevent duplicate permission loading calls
-        if (isLoadingPermissions.current) {
-            logger.info('Permission loading already in progress, skipping duplicate call');
-            return;
-        }
-
         if (!isAuthenticated) {
             setUserPermissions(null);
             setLoading(false);
@@ -74,21 +66,11 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
         }
 
         try {
-            isLoadingPermissions.current = true;
             setLoading(true);
-
-            // Only fetch permissions once per session unless refreshed explicitly
-            if (permissionsLoaded.current && userPermissions) {
-                logger.info('Using cached permissions');
-                setLoading(false);
-                return;
-            }
-
             const response = await roleApi.getUserPermissions();
 
             if (response.success && response.data) {
                 setUserPermissions(response.data);
-                permissionsLoaded.current = true;
             } else {
                 logger.warn('Failed to load user permissions');
                 // Set default permissions based on user role
@@ -98,27 +80,18 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
                         isAdmin: user.role === 'admin',
                         permissions: defaultPermissions
                     });
-                    permissionsLoaded.current = true;
                 }
             }
         } catch (error) {
             logger.error('Error loading permissions', error);
         } finally {
             setLoading(false);
-            isLoadingPermissions.current = false;
         }
     };
 
     // Load permissions when auth status changes
     useEffect(() => {
-        if (isAuthenticated && !permissionsLoaded.current) {
-            loadPermissions();
-        } else if (!isAuthenticated) {
-            // Reset permissions if not authenticated
-            setUserPermissions(null);
-            permissionsLoaded.current = false;
-            setLoading(false);
-        }
+        loadPermissions();
     }, [isAuthenticated, user?.role]);
 
     const hasPermission = (permission: string): boolean => {
@@ -141,8 +114,6 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
     };
 
     const refreshPermissions = async () => {
-        // Reset the loaded flag to force a fresh fetch
-        permissionsLoaded.current = false;
         await loadPermissions();
     };
 

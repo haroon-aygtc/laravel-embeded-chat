@@ -27,7 +27,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2, Search, Users as UsersIcon } from 'lucide-react';
+import { Loader2, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { usePermissions } from '@/context/PermissionContext';
 
@@ -60,7 +60,7 @@ export function UserRoles() {
                 ]);
 
                 if (usersResponse.success && usersResponse.data) {
-                    setUsers(usersResponse.data.users);
+                    setUsers(usersResponse.data);
                 }
 
                 if (rolesResponse.success && rolesResponse.data) {
@@ -87,12 +87,6 @@ export function UserRoles() {
         user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.role.toLowerCase().includes(searchQuery.toLowerCase())
     );
-
-    // Calculate role statistics
-    const roleStats = users.reduce((stats, user) => {
-        stats[user.role] = (stats[user.role] || 0) + 1;
-        return stats;
-    }, {} as Record<string, number>);
 
     // Update a user's role
     const handleRoleChange = async (userId: string, newRole: string) => {
@@ -158,42 +152,6 @@ export function UserRoles() {
                 </CardHeader>
 
                 <CardContent>
-                    {/* Role Statistics */}
-                    {!loading && (
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                            <Card className="bg-muted/40">
-                                <CardContent className="pt-6">
-                                    <div className="flex items-center">
-                                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 mr-3">
-                                            <UsersIcon className="h-5 w-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium">Total Users</p>
-                                            <p className="text-2xl font-bold">{users.length}</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                            {roles.slice(0, 3).map(role => (
-                                <Card key={role.id} className="bg-muted/40">
-                                    <CardContent className="pt-6">
-                                        <div className="flex items-center">
-                                            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 mr-3">
-                                                <Badge variant={getRoleBadgeVariant(role.id)}>
-                                                    {role.id.charAt(0).toUpperCase()}
-                                                </Badge>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium">{role.name}</p>
-                                                <p className="text-2xl font-bold">{roleStats[role.id] || 0}</p>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                    )}
-
                     <div className="flex items-center mb-4">
                         <div className="relative w-full max-w-sm">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
