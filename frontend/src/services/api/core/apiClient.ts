@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { getAuthToken, isTokenExpired } from '@/utils/auth';
+import { getCsrfToken } from '@/utils/auth';
 import logger from '@/utils/logger';
 
 /**
@@ -33,9 +33,9 @@ export const getWebSocketUrl = (path: string = '', params: Record<string, string
     return url;
 };
 
-// Generate a unique request ID for tracing
-const generateRequestId = () => {
-    return `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+// Function to generate a unique ID for each request
+const generateRequestId = (): string => {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
 // Create axios instance with base URL and sensible defaults
@@ -51,35 +51,30 @@ const apiClient: AxiosInstance = axios.create({
 
 // Add request interceptor for authentication and security
 apiClient.interceptors.request.use(
-    (config) => {
-        // Get token from localStorage - support both 'authToken' and 'token' for compatibility
-        const token = getAuthToken() || localStorage.getItem('token');
-
-        if (token && !config.headers.Authorization) {
-            // Check if token is expired
-            if (isTokenExpired(token)) {
-                // Token is expired, redirect to login
-                localStorage.removeItem('authToken');
-                localStorage.removeItem('token');
-                sessionStorage.removeItem('token');
-
-                if (!window.location.pathname.startsWith('/auth/')) {
-                    window.location.href = '/auth/login?redirect=' + encodeURIComponent(window.location.pathname);
-                }
-            } else {
-                config.headers.Authorization = `Bearer ${token}`;
-            }
-        }
-
+    async (config) => {
         // Add request ID for tracing
         const requestId = generateRequestId();
         config.headers['X-Request-ID'] = requestId;
 
-        // Add CSRF protection for non-GET requests
+        // For non-GET requests, ensure CSRF token is present
         if (config.method !== 'get') {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            if (csrfToken) {
-                config.headers['X-CSRF-Token'] = csrfToken;
+            try {
+                // Ensure CSRF token is available
+                await getCsrfToken();
+
+                // Extract CSRF token from cookie for headers
+                const cookies = document.cookie.split(';');
+                const xsrfToken = cookies
+                    .find(cookie => cookie.trim().startsWith('XSRF-TOKEN='))
+                    ?.split('=')[1];
+
+                if (xsrfToken) {
+                    // Laravel expects the decrypted value, which is provided in the X-XSRF-TOKEN header
+                    config.headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfToken);
+                }
+            } catch (error) {
+                logger.error('Failed to get CSRF token for request:', error);
+                // Continue without token - the request may fail with 419
             }
         }
 
@@ -97,13 +92,9 @@ apiClient.interceptors.response.use(
         return response;
     },
     async (error) => {
-        // Handle expired tokens or authentication errors
+        // Handle authentication errors
         if (error.response && error.response.status === 401) {
-            // Clear all tokens from storage
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('token');
-            sessionStorage.removeItem('token');
-
+            // Redirect to login if not already on an auth page
             if (!window.location.pathname.startsWith('/auth/')) {
                 window.location.href = '/auth/login?redirect=' + encodeURIComponent(window.location.pathname);
             }
@@ -189,7 +180,7 @@ export const api = {
         };
 
         // Add auth token if available (try all storage mechanisms for compatibility)
-        const token = getAuthToken() || localStorage.getItem('token') || sessionStorage.getItem('token');
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
         }

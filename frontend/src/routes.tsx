@@ -23,7 +23,7 @@ const ModerationQueue = lazy(
 const ModerationRules = lazy(
   () => import("@/components/admin/ModerationRules"),
 );
-const UserManagement = lazy(() => import("@/components/admin/UserManagement"));
+const UserManagement = lazy(() => import("@/components/admin/user-management"));
 const WidgetConfigurator = lazy(
   () => import("@/components/admin/WidgetConfigurator"),
 );
@@ -37,6 +37,11 @@ const EmbedCodeGenerator = lazy(
   () => import("@/components/admin/EmbedCodeGenerator"),
 );
 const SystemSettings = lazy(() => import("@/components/admin/SystemSettings"));
+
+// Widget management pages
+const WidgetsPage = lazy(() => import("@/pages/admin/widgets"));
+const CreateWidgetPage = lazy(() => import("@/pages/admin/widgets/create"));
+const EditWidgetPage = lazy(() => import("@/pages/admin/widgets/edit/[id]"));
 
 // Lazy-loaded user components
 const ProfilePage = lazy(() => import("@/pages/user/profile"));
@@ -67,7 +72,7 @@ const AnimationDemo = lazy(
 
 // Loading fallback
 const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-full w-full p-8">
+  <div className="flex items-center justify-center min-h-[400px]">
     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
   </div>
 );
@@ -135,6 +140,31 @@ const AppRoutes = () => {
           element={
             <Suspense fallback={<LoadingFallback />}>
               <WidgetConfigurator />
+            </Suspense>
+          }
+        />
+        {/* Widget Management Routes */}
+        <Route
+          path="widgets"
+          element={
+            <Suspense fallback={<LoadingFallback />}>
+              <WidgetsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="widgets/create"
+          element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CreateWidgetPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="widgets/edit/:id"
+          element={
+            <Suspense fallback={<LoadingFallback />}>
+              <EditWidgetPage />
             </Suspense>
           }
         />

@@ -14,11 +14,12 @@ import type {
   ImportData,
   ImportOptions,
   FindSimilarParams,
-  KnowledgeBaseConfig,
   KnowledgeBaseForContextRule
 } from "../types/knowledgeBase";
-export type { KnowledgeBaseConfig } from "../types/knowledgeBase";
+// Import KnowledgeBaseConfig as KBConfig to avoid naming conflicts
+import type { KnowledgeBaseConfig as KBConfig } from "../types/knowledgeBase";
 import { knowledgeBaseCoreApi } from "./api/features/knowledgebase/knowledgebasefeatures";
+import { api } from "@/services/api/core/apiClient";
 
 // Constants for knowledge base configuration
 export const KNOWLEDGE_BASE_CONSTANTS = {
@@ -492,7 +493,7 @@ class KnowledgeBaseService {
   /**
    * Get all knowledge base configurations
    */
-  async getAllConfigs(page = 1, perPage = 15, sortBy = 'created_at', sortDirection = 'desc'): Promise<KnowledgeBaseConfig[]> {
+  async getAllConfigs(page = 1, perPage = 15, sortBy = 'created_at', sortDirection = 'desc'): Promise<KBConfig[]> {
     try {
       // Use the getAllKnowledgeBases method which already uses knowledgeBaseCoreApi
       const params: GetKnowledgeBasesParams = {
@@ -521,7 +522,7 @@ class KnowledgeBaseService {
   /**
    * Get a knowledge base configuration by ID
    */
-  async getConfig(id: string): Promise<KnowledgeBaseConfig> {
+  async getConfig(id: string): Promise<KBConfig> {
     try {
       // Use the getKnowledgeBase method which already uses knowledgeBaseCoreApi
       const kb = await this.getKnowledgeBase(id);
@@ -535,7 +536,7 @@ class KnowledgeBaseService {
   /**
    * Create a new knowledge base configuration
    */
-  async createConfig(data: Partial<KnowledgeBaseConfig>): Promise<KnowledgeBaseConfig> {
+  async createConfig(data: Partial<KBConfig>): Promise<KBConfig> {
     try {
       // Use the createKnowledgeBase method which already uses knowledgeBaseCoreApi
       const params: CreateKnowledgeBaseParams = {
@@ -558,7 +559,7 @@ class KnowledgeBaseService {
   /**
    * Update a knowledge base configuration
    */
-  async updateConfig(id: string, data: Partial<KnowledgeBaseConfig>): Promise<KnowledgeBaseConfig> {
+  async updateConfig(id: string, data: Partial<KBConfig>): Promise<KBConfig> {
     try {
       // Use the updateKnowledgeBase method which already uses knowledgeBaseCoreApi
       const params: UpdateKnowledgeBaseParams = {
@@ -634,7 +635,7 @@ class KnowledgeBaseService {
   /**
    * Helper method to convert KnowledgeBase to KnowledgeBaseConfig format
    */
-  private toConfigFormat(kb: KnowledgeBase): KnowledgeBaseConfig {
+  private toConfigFormat(kb: KnowledgeBase): KBConfig {
     return {
       id: kb.id,
       name: kb.name,
@@ -654,19 +655,3 @@ class KnowledgeBaseService {
 
 // Export a singleton instance
 export const knowledgeBaseService = new KnowledgeBaseService();
-
-export interface KnowledgeBaseConfig {
-  id: string;
-  name: string;
-  type: 'api' | 'database' | 'cms' | 'vector' | 'file';
-  endpoint?: string;
-  apiKey?: string;
-  connectionString?: string;
-  refreshInterval: number;
-  parameters: Record<string, any>;
-  parametersText?: string;
-  isActive: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-  lastSyncedAt?: string;
-}

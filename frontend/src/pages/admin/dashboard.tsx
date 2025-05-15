@@ -30,7 +30,7 @@ import EmbedCodeGenerator from "@/components/admin/EmbedCodeGenerator";
 import KnowledgeBaseManager from "@/components/admin/KnowledgeBaseManager";
 import AIInteractionLogs from "@/components/admin/AIInteractionLogs";
 import SystemSettings from "@/components/admin/SystemSettings";
-import UserManagement from "@/components/admin/UserManagement";
+import UserManagement from "@/components/admin/user-management";
 import AIConfiguration from "@/components/admin/AIConfiguration";
 import { useAdmin } from "@/context/AdminContext";
 import { useNavigate, useLocation } from "react-router-dom";

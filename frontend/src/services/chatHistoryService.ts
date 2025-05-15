@@ -1,8 +1,7 @@
-import { ChatMessage, ChatSession } from "@/models";
-import { Message } from "@/types/chat";
+import { ChatMessage, ChatSession } from "@/services/api/models";
+import { Message } from "@/services/api/types/chat";
 import { v4 as uuidv4 } from "uuid";
 import logger from "@/utils/logger";
-import { getMySQLClient } from "./mysqlClient";
 
 export interface ChatHistoryParams {
   userId: string;

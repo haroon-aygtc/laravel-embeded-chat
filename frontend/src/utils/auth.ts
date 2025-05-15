@@ -4,40 +4,39 @@
  * This module provides utility functions for handling authentication state and CSRF tokens.
  */
 
-import { AUTH_TOKEN_KEY, AUTH_USER_KEY, TOKEN_EXPIRY_MARGIN } from "@/config/constants";
+import { AUTH_USER_KEY } from "@/config/constants";
 import logger from "@/utils/logger";
 import { env } from "@/config/env";
+// Use the consistent API base URL
+import { env as envConfig } from "@/config/env";
 
 // This flag prevents multiple concurrent CSRF token fetches
 let isRequestingCsrfToken = false;
 let csrfPromise: Promise<void> | null = null;
 const CSRF_TIMESTAMP_KEY = 'csrf_fetch_timestamp';
-const CSRF_MIN_INTERVAL = 5000; // 5 seconds minimum between fetches
+const CSRF_MIN_INTERVAL = 60000; // Increase to 60 seconds minimum between fetches
+const CSRF_TOKEN_FLAG = 'csrf_token_valid';
 
-// CRITICAL FIX: Global in-memory flag to block multiple CSRF requests
-// This is a singleton pattern to ensure only one request goes through
-let hasRequestedCsrfToken = false;
-
-/**
- * Get the authentication token from localStorage
- */
-export const getAuthToken = (): string | null => {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
+// CRITICAL FIX: Use session/page-level storage instead of a module-level variable
+// to prevent the flag from persisting across navigation events
+const getCsrfRequestFlag = (): boolean => {
+  return sessionStorage.getItem('csrf_requested_flag') === 'true';
 };
 
-/**
- * Set the authentication token in localStorage
- */
-export const setAuthToken = (token: string): void => {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
+const setCsrfRequestFlag = (value: boolean): void => {
+  sessionStorage.setItem('csrf_requested_flag', value ? 'true' : 'false');
 };
 
-/**
- * Remove the authentication token from localStorage
- */
-export const removeAuthToken = (): void => {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
+const setCsrfTokenValid = (valid: boolean): void => {
+  sessionStorage.setItem(CSRF_TOKEN_FLAG, valid ? 'true' : 'false');
+};
+
+const isCsrfTokenValid = (): boolean => {
+  return sessionStorage.getItem(CSRF_TOKEN_FLAG) === 'true';
+};
+
+const updateCsrfFetchTimestamp = (): void => {
+  sessionStorage.setItem(CSRF_TIMESTAMP_KEY, Date.now().toString());
 };
 
 /**
@@ -63,56 +62,39 @@ export const setAuthUser = (user: any): void => {
 };
 
 /**
- * Check if the user is authenticated
+ * Remove any stored auth data
  */
-export const isAuthenticated = (): boolean => {
-  const token = getAuthToken();
-  if (!token) return false;
-  return !isTokenExpired(token);
+export const removeAuthData = (): void => {
+  localStorage.removeItem(AUTH_USER_KEY);
 };
 
 /**
- * Parse JWT token to get payload
+ * Check if the user is authenticated based on session cookies
+ * This now relies on the backend session state rather than localStorage
  */
-export const parseToken = (token: string): any => {
+export const isAuthenticated = async (): Promise<boolean> => {
   try {
-    const base64Url = token.split(".")[1];
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map(function (c) {
-          return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
-        })
-        .join(""),
-    );
+    // Instead of checking localStorage, we make a lightweight API call
+    // to check if the user is authenticated via cookies
+    const response = await fetch('/api/auth/check', {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
 
-    return JSON.parse(jsonPayload);
+    if (response.ok) {
+      return true;
+    }
+
+    return false;
   } catch (error) {
-    logger.error("Error parsing token:", error);
-    return null;
+    logger.error("Error in isAuthenticated check:", error);
+    // If there's any error during authentication check, consider user not authenticated
+    return false;
   }
-};
-
-/**
- * Check if token is expired
- */
-export const isTokenExpired = (token: string): boolean => {
-  const payload = parseToken(token);
-  if (!payload || !payload.exp) return true;
-
-  const expirationTime = payload.exp * 1000; // Convert to milliseconds
-  return Date.now() >= (expirationTime - TOKEN_EXPIRY_MARGIN);
-};
-
-/**
- * Get token expiration date
- */
-export const getTokenExpirationDate = (token: string): Date | null => {
-  const payload = parseToken(token);
-  if (!payload || !payload.exp) return null;
-
-  return new Date(payload.exp * 1000); // Convert to milliseconds
 };
 
 /**
@@ -128,29 +110,22 @@ const wasCsrfFetchedRecently = (): boolean => {
 };
 
 /**
- * Update CSRF token fetch timestamp
- */
-const updateCsrfFetchTimestamp = (): void => {
-  sessionStorage.setItem(CSRF_TIMESTAMP_KEY, Date.now().toString());
-};
-
-/**
  * Get CSRF token from Laravel Sanctum
  * This is required for any stateful requests to Laravel
- * 
+ *
  * This implementation uses a singleton pattern to absolutely prevent multiple concurrent calls
  */
 export const getCsrfToken = async (): Promise<void> => {
-  // CRITICAL FIX: If we already requested a token during this page load, just return
-  // This is a drastic measure to prevent the infinite loop
-  if (hasRequestedCsrfToken) {
-    logger.info('CSRF token already requested in this session, preventing additional requests');
+  // If we already have a valid CSRF token, no need to fetch again
+  if (isCsrfTokenValid()) {
+    logger.debug('Using cached CSRF token status - already valid');
     return;
   }
 
-  // Check if CSRF was fetched very recently to prevent rapid calls
-  if (wasCsrfFetchedRecently()) {
-    logger.debug('CSRF token was fetched recently, skipping redundant fetch');
+  // Check if we already requested a token during this session and limit to once per session
+  if (getCsrfRequestFlag() && wasCsrfFetchedRecently()) {
+    logger.info('CSRF token already requested recently, preventing additional requests');
+    setCsrfTokenValid(true); // Assume it's valid to prevent more requests
     return;
   }
 
@@ -162,6 +137,7 @@ export const getCsrfToken = async (): Promise<void> => {
 
   if (xsrfToken) {
     logger.debug('CSRF token already exists in cookies');
+    setCsrfTokenValid(true);
     return;
   }
 
@@ -177,14 +153,14 @@ export const getCsrfToken = async (): Promise<void> => {
   isRequestingCsrfToken = true;
   updateCsrfFetchTimestamp();
 
-  // CRITICAL FIX: Set the global flag to prevent future calls
-  hasRequestedCsrfToken = true;
+  // Set the global flag to prevent future calls
+  setCsrfRequestFlag(true);
 
   // Create a new promise
   csrfPromise = (async () => {
     try {
-      // Use the full URL with the correct port (8000 for Laravel)
-      const baseUrl = (env.API_BASE_URL || 'http://localhost:8000').replace(/\/api\/?$/, '');
+      // Use the consistent API base URL from environment
+      const baseUrl = envConfig.API_BASE_URL.replace(/\/api\/?$/, '');
       const csrfUrl = `${baseUrl}/sanctum/csrf-cookie`;
 
       logger.info('Fetching CSRF token from:', csrfUrl);
@@ -214,6 +190,7 @@ export const getCsrfToken = async (): Promise<void> => {
         logger.warn('XSRF-TOKEN cookie was not set in the response, but no error occurred');
       } else {
         logger.info('CSRF token fetch successful');
+        setCsrfTokenValid(true);
       }
     } catch (error) {
       logger.error('❌ Failed to fetch CSRF cookie:', error);

@@ -9,11 +9,11 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { contextRulesApi, widgetConfigApi } from "@/services/apiService";
 import { ContextRule } from "@/types/contextRules";
-import { useRealtime } from "@/hooks/useRealtime";
+import { widgetApi } from "@/services/api/features/widget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/use-toast";
+import { contextRulesApi } from "@/services/api/features/contextRulesfeatures";
 
 interface EmbedCodeGeneratorProps {
   widgetId?: string;
@@ -43,16 +43,9 @@ const EmbedCodeGenerator = ({
   const [widgetColor, setWidgetColor] = useState(initialWidgetColor);
   const [widgetPosition, setWidgetPosition] = useState(initialWidgetPosition);
   const [widgetSize, setWidgetSize] = useState(initialWidgetSize);
-  const [configId, setConfigId] = useState<string | null>(null);
+  const [embedCode, setEmbedCode] = useState<string>("");
+  const [iframeEmbedCode, setIframeEmbedCode] = useState<string>("");
   const { toast } = useToast();
-
-  // Subscribe to real-time changes in widget_configs table
-  const { data: realtimeConfig } = useRealtime<any>(
-    "widget_configs",
-    ["UPDATE"],
-    `user_id=eq.${userId}`,
-    true,
-  );
 
   // Fetch available context rules and widget configuration
   useEffect(() => {
@@ -62,28 +55,39 @@ const EmbedCodeGenerator = ({
 
       try {
         // Fetch context rules
-        const rules = await contextRulesApi.getAll();
-        setContextRules(rules.filter((rule) => rule.isActive));
-        if (rules.length > 0) {
-          setSelectedContextRuleId(rules[0].id);
+        const rulesResponse = await contextRulesApi.getAllRules();
+        if (rulesResponse.success && rulesResponse.data) {
+          const activeRules = rulesResponse.data.filter((rule) => rule.isActive);
+          setContextRules(activeRules);
+          if (activeRules.length > 0) {
+            setSelectedContextRuleId(activeRules[0].id);
+          }
         }
 
-        // Fetch widget configuration
-        const config = await widgetConfigApi.getByUserId(userId);
-        if (config) {
-          setConfigId(config.id);
+        // Fetch widget embed code if widgetId is provided
+        if (widgetId && widgetId !== "chat-widget-123") {
+          const response = await widgetApi.getWidgetEmbedCode(widgetId);
+          if (response.success && response.data) {
+            setEmbedCode(response.data.code);
 
-          // Update state with configuration values if available
-          if (config.settings) {
-            const settings = config.settings;
-            if (settings.primaryColor) setWidgetColor(settings.primaryColor);
-            if (settings.position) setWidgetPosition(settings.position);
+            // Generate iframe code using our backend-provided widget configuration
+            const widgetResponse = await widgetApi.getWidgetById(widgetId);
+            if (widgetResponse.success && widgetResponse.data) {
+              const widget = widgetResponse.data;
 
-            // Map widget size based on chatIconSize
-            if (settings.chatIconSize) {
-              if (settings.chatIconSize <= 30) setWidgetSize("small");
-              else if (settings.chatIconSize >= 50) setWidgetSize("large");
-              else setWidgetSize("medium");
+              // Update state with widget settings
+              if (widget.visualSettings && widget.visualSettings.primaryColor) {
+                setWidgetColor(widget.visualSettings.primaryColor);
+              }
+
+              if (widget.behavioralSettings && widget.behavioralSettings.initialState) {
+                setWidgetPosition(widget.behavioralSettings.initialState as "bottom-right" | "bottom-left" | "top-right" | "top-left");
+              }
+
+              // Generate iframe embed code
+              const baseUrl = window.location.origin;
+              const iframeCode = generateCustomIframeCode(baseUrl, widget);
+              setIframeEmbedCode(iframeCode);
             }
           }
         }
@@ -101,35 +105,43 @@ const EmbedCodeGenerator = ({
     };
 
     fetchData();
-  }, [userId, toast]);
-
-  // Update widget configuration when real-time changes occur
-  useEffect(() => {
-    if (realtimeConfig && realtimeConfig.settings) {
-      const settings = realtimeConfig.settings;
-
-      // Update state with new configuration values
-      if (settings.primaryColor) setWidgetColor(settings.primaryColor);
-      if (settings.position) setWidgetPosition(settings.position);
-
-      // Map widget size based on chatIconSize
-      if (settings.chatIconSize) {
-        if (settings.chatIconSize <= 30) setWidgetSize("small");
-        else if (settings.chatIconSize >= 50) setWidgetSize("large");
-        else setWidgetSize("medium");
-      }
-
-      toast({
-        title: "Configuration Updated",
-        description: "Widget configuration has been updated",
-      });
-    }
-  }, [realtimeConfig, toast]);
+  }, [widgetId, toast]);
 
   const baseUrl = window.location.origin;
 
+  // Generate a custom iframe code based on widget settings
+  const generateCustomIframeCode = (baseUrl: string, widget: any) => {
+    const width = widgetSize === "small" ? "300" : widgetSize === "medium" ? "380" : "450";
+    const position = widget.position || "bottom-right";
+
+    let positionCSS = "";
+    if (position.includes("bottom")) {
+      positionCSS += "bottom: 20px;";
+    } else {
+      positionCSS += "top: 20px;";
+    }
+
+    if (position.includes("right")) {
+      positionCSS += "right: 20px;";
+    } else {
+      positionCSS += "left: 20px;";
+    }
+
+    return `<iframe 
+  src="${baseUrl}/chat-embed?widgetId=${widget.id}" 
+  width="${width}" 
+  height="600" 
+  style="border: none; position: fixed; ${positionCSS} z-index: 9999; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); border-radius: 12px; background-color: white;"
+  title="Chat Widget"
+></iframe>`;
+  };
+
   // Generate iframe embed code
   const generateIframeCode = () => {
+    if (iframeEmbedCode) {
+      return iframeEmbedCode;
+    }
+
     let url = `${baseUrl}/chat-embed`;
     const params = new URLSearchParams();
 
@@ -154,6 +166,10 @@ const EmbedCodeGenerator = ({
 
   // Generate Web Component (Shadow DOM) embed code
   const generateWebComponentCode = () => {
+    if (embedCode) {
+      return embedCode;
+    }
+
     let attributes = `widget-id="${widgetId}" position="${widgetPosition}" color="${widgetColor}" size="${widgetSize}" context-mode="${contextMode}"`;
 
     if (contextMode === "business" && selectedContextRuleId) {
@@ -197,50 +213,52 @@ const EmbedCodeGenerator = ({
         </p>
       </div>
 
-      <div className="mb-6">
-        <h3 className="text-lg font-medium mb-2">Widget Settings</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Context Mode
-            </label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={contextMode}
-              onChange={(e) =>
-                setContextMode(e.target.value as "general" | "business")
-              }
-            >
-              <option value="general">General</option>
-              <option value="business">Business</option>
-            </select>
-          </div>
-
-          {contextMode === "business" && (
+      {!initialWidgetId || initialWidgetId === "chat-widget-123" ? (
+        <div className="mb-6">
+          <h3 className="text-lg font-medium mb-2">Widget Settings</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Context Rule
+                Context Mode
               </label>
               <select
                 className="w-full p-2 border rounded-md"
-                value={selectedContextRuleId}
-                onChange={(e) => setSelectedContextRuleId(e.target.value)}
-                disabled={contextRules.length === 0}
+                value={contextMode}
+                onChange={(e) =>
+                  setContextMode(e.target.value as "general" | "business")
+                }
               >
-                {contextRules.length === 0 ? (
-                  <option value="">No rules available</option>
-                ) : (
-                  contextRules.map((rule) => (
-                    <option key={rule.id} value={rule.id}>
-                      {rule.name}
-                    </option>
-                  ))
-                )}
+                <option value="general">General</option>
+                <option value="business">Business</option>
               </select>
             </div>
-          )}
+
+            {contextMode === "business" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Context Rule
+                </label>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={selectedContextRuleId}
+                  onChange={(e) => setSelectedContextRuleId(e.target.value)}
+                  disabled={contextRules.length === 0}
+                >
+                  {contextRules.length === 0 ? (
+                    <option value="">No rules available</option>
+                  ) : (
+                    contextRules.map((rule) => (
+                      <option key={rule.id} value={rule.id}>
+                        {rule.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <Tabs defaultValue="iframe" className="w-full">
         <TabsList className="mb-4 w-full flex justify-start">

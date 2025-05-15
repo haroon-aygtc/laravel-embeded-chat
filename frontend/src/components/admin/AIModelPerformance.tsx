@@ -10,11 +10,12 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, AlertCircle, Info } from "lucide-react";
-import aiService from "@/services/aiService";
+import aiService from "@/services/ai/aiService";
 import { Button } from "@/components/ui/button";
 import databaseService from "@/services/databaseService";
 import { useToast } from "@/components/ui/use-toast";
 
+// Component internal interfaces
 interface ModelData {
   name: string;
   requestCount: number;
@@ -29,6 +30,38 @@ interface ContextData {
   effectiveness: number;
 }
 
+// API response interfaces
+interface AIServiceModelUsage {
+  model: string;
+  count: number;
+  successRate?: number;
+}
+
+interface AIServiceResponseTime {
+  model: string;
+  avgTime: number;
+}
+
+interface AIServiceContextUsage {
+  name: string;
+  count: number;
+  effectiveness?: number;
+}
+
+interface DailyUsage {
+  date: string;
+  count: number;
+}
+
+interface AIServicePerformanceResult {
+  modelUsage: AIServiceModelUsage[];
+  avgResponseTimes: AIServiceResponseTime[];
+  dailyUsage: DailyUsage[]; // Not used in this component but properly typed
+  timeRange: string;
+  contextUsage?: AIServiceContextUsage[];
+}
+
+// Component props
 interface AIModelPerformanceProps {
   timeRange?: "day" | "week" | "month";
 }
@@ -96,17 +129,19 @@ const AIModelPerformance: React.FC<AIModelPerformanceProps> = ({
         }
       } else {
         // Fall back to AI service if database service fails
-        const result = await aiService.getModelPerformance(apiTimeRange);
+        const result = await aiService.getModelPerformance({
+          timeRange: apiTimeRange,
+        }) as AIServicePerformanceResult;
 
         // Process model data
         if (result.modelUsage && result.modelUsage.length > 0) {
           const formattedModelData: ModelData[] = result.modelUsage.map(
-            (model: any) => ({
+            (model) => ({
               name: model.model,
               requestCount: model.count,
               avgResponseTime:
                 result.avgResponseTimes?.find(
-                  (m: any) => m.model === model.model
+                  (m) => m.model === model.model
                 )?.avgTime || 0,
               errorRate: 100 - (model.successRate || 100), // Convert success rate to error rate
               isActive: true,
@@ -118,11 +153,12 @@ const AIModelPerformance: React.FC<AIModelPerformanceProps> = ({
         // Process context data if available
         if (result.contextUsage && result.contextUsage.length > 0) {
           const totalContexts = result.contextUsage.reduce(
-            (sum: number, ctx: any) => sum + ctx.count,
+            (sum, ctx) => sum + ctx.count,
             0
           );
+
           const formattedContextData: ContextData[] = result.contextUsage.map(
-            (ctx: any) => ({
+            (ctx) => ({
               name: ctx.name || "No Context",
               percentage:
                 totalContexts > 0 ? (ctx.count / totalContexts) * 100 : 0,

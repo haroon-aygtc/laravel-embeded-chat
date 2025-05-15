@@ -41,7 +41,7 @@ const WebSocketClientDemo = () => {
   const connectWebSocket = () => {
     try {
       // Use localhost for development
-      const wsUrl = `ws://localhost:3000`;
+      const wsUrl = `ws://localhost:9000`;
       const newSocket = new WebSocket(wsUrl);
 
       setConnectionAttempts((prev) => prev + 1);
@@ -310,7 +310,7 @@ const WebSocketClientDemo = () => {
 
                 <div className="text-sm font-medium">WebSocket URL:</div>
                 <div className="text-sm font-mono truncate">
-                  ws://localhost:3000
+                  ws://localhost:9000
                 </div>
               </div>
 

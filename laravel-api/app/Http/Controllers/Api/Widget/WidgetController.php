@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Widget;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Widget\StoreWidgetRequest;
+use App\Http\Requests\Widget\CreateWidgetRequest;
 use App\Http\Requests\Widget\UpdateWidgetRequest;
 use App\Models\Widget;
 use App\Services\WidgetService;
@@ -13,10 +13,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class WidgetController extends Controller
 {
-    protected $widgetService;
+    protected WidgetService $widgetService;
 
     /**
      * Constructor with dependency injection
@@ -30,33 +31,181 @@ class WidgetController extends Controller
     }
 
     /**
-     * Get a paginated list of widgets for the authenticated user
+     * Get all widgets for the current user
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
-    public function index(Request $request)
+    public function index(): JsonResponse
     {
-        $filters = $request->only(['name', 'is_active']);
-        $perPage = $request->input('per_page', 10);
-        $page = $request->input('page', 1);
+        $widgets = $this->widgetService->getAllWidgetsByUser(Auth::id());
 
-        $result = $this->widgetService->getAllWidgets($filters, $page, $perPage);
-
-        return response()->json($result);
+        return response()->json($widgets);
     }
 
     /**
-     * Get a specific widget by ID
+     * Get a widget by ID
      *
      * @param string $id Widget ID
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
-    public function show(string $id)
+    public function show(string $id): JsonResponse
     {
-        $result = $this->widgetService->getWidget($id);
+        $widget = $this->widgetService->getWidgetById($id);
 
-        return response()->json($result);
+        if (!$widget) {
+            return response()->json(['error' => 'Widget not found'], 404);
+        }
+
+        return response()->json($widget);
+    }
+
+    /**
+     * Create a new widget
+     *
+     * @param CreateWidgetRequest $request
+     * @return JsonResponse
+     */
+    public function store(CreateWidgetRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+        $data['user_id'] = Auth::id();
+
+        // Generate a new UUID
+        $data['id'] = Str::uuid()->toString();
+
+        $widget = $this->widgetService->createWidget($data);
+
+        return response()->json($widget, 201);
+    }
+
+    /**
+     * Update an existing widget
+     *
+     * @param UpdateWidgetRequest $request
+     * @param string $id Widget ID
+     * @return JsonResponse
+     */
+    public function update(UpdateWidgetRequest $request, string $id): JsonResponse
+    {
+        $data = $request->validated();
+
+        $widget = $this->widgetService->getWidgetById($id);
+
+        if (!$widget) {
+            return response()->json(['error' => 'Widget not found'], 404);
+        }
+
+        if ($widget->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $updatedWidget = $this->widgetService->updateWidget($id, $data);
+
+        return response()->json($updatedWidget);
+    }
+
+    /**
+     * Delete a widget
+     *
+     * @param string $id Widget ID
+     * @return JsonResponse
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $widget = $this->widgetService->getWidgetById($id);
+
+        if (!$widget) {
+            return response()->json(['error' => 'Widget not found'], 404);
+        }
+
+        if ($widget->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $this->widgetService->deleteWidget($id);
+
+        return response()->json(['message' => 'Widget deleted successfully']);
+    }
+
+    /**
+     * Activate a widget
+     *
+     * @param string $id Widget ID
+     * @return JsonResponse
+     */
+    public function activate(string $id): JsonResponse
+    {
+        $widget = $this->widgetService->getWidgetById($id);
+
+        if (!$widget) {
+            return response()->json(['error' => 'Widget not found'], 404);
+        }
+
+        if ($widget->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $updatedWidget = $this->widgetService->updateWidget($id, ['is_active' => true]);
+
+        return response()->json($updatedWidget);
+    }
+
+    /**
+     * Deactivate a widget
+     *
+     * @param string $id Widget ID
+     * @return JsonResponse
+     */
+    public function deactivate(string $id): JsonResponse
+    {
+        $widget = $this->widgetService->getWidgetById($id);
+
+        if (!$widget) {
+            return response()->json(['error' => 'Widget not found'], 404);
+        }
+
+        if ($widget->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $updatedWidget = $this->widgetService->updateWidget($id, ['is_active' => false]);
+
+        return response()->json($updatedWidget);
+    }
+
+    /**
+     * Get embed code for a widget
+     *
+     * @param string $id Widget ID
+     * @return JsonResponse
+     */
+    public function getEmbedCode(string $id): JsonResponse
+    {
+        $widget = $this->widgetService->getWidgetById($id);
+
+        if (!$widget) {
+            return response()->json(['error' => 'Widget not found'], 404);
+        }
+
+        if ($widget->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $baseUrl = config('app.frontend_url');
+        $widgetId = $widget->id;
+
+        $embedCode = "<script src=\"{$baseUrl}/widget.js\" defer></script>\n" .
+            "<script>\n" .
+            "  document.addEventListener('DOMContentLoaded', function() {\n" .
+            "    TheLastLab.initChat({\n" .
+            "      widgetId: '{$widgetId}',\n" .
+            "      container: 'tllab-chat-container', // Optional custom container ID\n" .
+            "    });\n" .
+            "  });\n" .
+            "</script>\n" .
+            "<div id=\"tllab-chat-container\"></div>";
+
+        return response()->json(['code' => $embedCode]);
     }
 
     /**
@@ -80,51 +229,6 @@ class WidgetController extends Controller
                 'message' => 'Failed to retrieve default widget configuration: ' . $e->getMessage()
             ], 500);
         }
-    }
-
-    /**
-     * Create a new widget
-     *
-     * @param StoreWidgetRequest $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function store(StoreWidgetRequest $request)
-    {
-        $data = $request->validated();
-
-        // Ensure the authenticated user is set as the owner
-        $data['user_id'] = Auth::id();
-
-        $result = $this->widgetService->createWidget($data);
-
-        return response()->json($result, $result['status'] === 'success' ? 201 : 422);
-    }
-
-    /**
-     * Update an existing widget
-     *
-     * @param UpdateWidgetRequest $request
-     * @param string $id Widget ID
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function update(UpdateWidgetRequest $request, string $id)
-    {
-        $result = $this->widgetService->updateWidget($id, $request->validated());
-
-        return response()->json($result);
-    }
-
-    /**
-     * Delete a widget
-     *
-     * @param string $id Widget ID
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function destroy(string $id)
-    {
-        $result = $this->widgetService->deleteWidget($id);
-
-        return response()->json($result);
     }
 
     /**

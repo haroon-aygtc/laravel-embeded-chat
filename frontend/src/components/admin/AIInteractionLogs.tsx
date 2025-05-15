@@ -27,7 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Search, Download, Filter, Calendar } from "lucide-react";
-import aiService from "@/services/aiService";
+import aiService from "@/services/ai/aiService";
 import { format } from "date-fns";
 import databaseService from "@/services/databaseService";
 import logger from "@/utils/logger";

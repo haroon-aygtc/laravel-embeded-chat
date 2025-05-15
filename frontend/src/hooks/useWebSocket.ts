@@ -54,7 +54,7 @@ export default function useWebSocket(url: string | null) {
                     reconnectTimeoutRef.current = window.setTimeout(() => {
                         logger.info('Attempting to reconnect WebSocket...');
                         connect();
-                    }, 3000);
+                    }, 9000);
                 }
             });
 

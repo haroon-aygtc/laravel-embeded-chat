@@ -9,35 +9,90 @@ import logger from "@/utils/logger";
 import { api } from "./api/middleware/apiMiddleware";
 import { User, CreateUserDTO } from "@/types";
 import { userApi } from "./api/features/user";
+import { formatUserObject, mapRoleToApiRole, mapUserProfileToUser } from "@/components/admin/user-management/utils";
 
 export interface UserListResponse {
-  users: User[];
-  totalCount: number;
-  page: number;
-  pageSize: number;
+  // Laravel paginator format
+  data: User[];
+  current_page: number;
+  per_page: number;
+  total: number;
+  last_page: number;
+  from?: number;
+  to?: number;
+  path?: string;
+  links?: Array<{ url: string | null, label: string, active: boolean }>;
+  // Legacy format for backward compatibility
+  users?: User[];
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
 }
 
 // Export these functions to match the imports in UserManagement.tsx
 export const getUsers = async (): Promise<User[]> => {
   try {
-    const response = await api.get<{ users: User[] }>("/users");
+    const response = await userApi.getUsers();
     if (!response.success || !response.data) {
-      throw new Error("Failed to fetch users");
+      throw new Error(response.error?.message || "Failed to fetch users");
     }
-    return response.data.users || [];
+
+    logger.debug('User API response:', response.data);
+
+    // Handle different response formats
+    let users: any[] = [];
+
+    // Handle Laravel paginator response format
+    if (response.data.data && Array.isArray(response.data.data)) {
+      users = response.data.data;
+    }
+    // Legacy array format
+    else if (Array.isArray(response.data)) {
+      users = response.data;
+    }
+    // Legacy users property
+    else if (response.data.users && Array.isArray(response.data.users)) {
+      users = response.data.users;
+    }
+    // No recognized format
+    else {
+      logger.warn('Unrecognized user data format:', response.data);
+      return [];
+    }
+
+    // Map the user objects to the User interface using the shared utility function
+    return users.map(formatUserObject);
   } catch (error) {
     logger.error("Error in getUsers:", error);
-    return [];
+    // In case of network errors, provide a more specific message
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error("Network error: Unable to connect to the server");
+    }
+    // Re-throw the error to be handled by the caller
+    throw error;
   }
 };
 
 export const createUser = async (userData: CreateUserDTO): Promise<User | null> => {
   try {
-    const response = await api.post<User>("/users", userData);
+    // Convert User role type to UserProfile role type using the shared utility function
+    const userProfileData = {
+      name: userData.name,
+      email: userData.email,
+      role: mapRoleToApiRole(userData.role),
+      isActive: userData.isActive,
+      // Include any other fields needed by the API
+      password: userData.password
+    };
+
+    // Use the userApi feature instead of direct API calls
+    const response = await userApi.createUser(userProfileData);
     if (!response.success || !response.data) {
-      throw new Error("Failed to create user");
+      throw new Error(response.error?.message || "Failed to create user");
     }
-    return response.data;
+
+    // Map the response to a User object using the shared utility function
+    return mapUserProfileToUser(response.data);
   } catch (error) {
     logger.error("Error in createUser:", error);
     throw error;
@@ -46,11 +101,25 @@ export const createUser = async (userData: CreateUserDTO): Promise<User | null> 
 
 export const updateUser = async (id: string, userData: Partial<User>): Promise<User | null> => {
   try {
-    const response = await api.put<User>(`/users/${id}`, userData);
-    if (!response.success || !response.data) {
-      throw new Error("Failed to update user");
+    // Convert from User type to UserProfile type expected by userApi using the shared utility function
+    const profileData: any = {
+      name: userData.name,
+      email: userData.email,
+      isActive: userData.isActive
+    };
+
+    // Handle the role type conversion
+    if (userData.role) {
+      profileData.role = mapRoleToApiRole(userData.role);
     }
-    return response.data;
+
+    const response = await userApi.updateUser(id, profileData);
+    if (!response.success || !response.data) {
+      throw new Error(response.error?.message || "Failed to update user");
+    }
+
+    // Map the response to a User object using the shared utility function
+    return mapUserProfileToUser(response.data);
   } catch (error) {
     logger.error(`Error in updateUser for user ${id}:`, error);
     throw error;
@@ -59,9 +128,10 @@ export const updateUser = async (id: string, userData: Partial<User>): Promise<U
 
 export const deleteUser = async (id: string): Promise<boolean> => {
   try {
-    const response = await api.delete<{ success: boolean }>(`/users/${id}`);
+    // Use the userApi feature instead of direct API calls
+    const response = await userApi.deleteUser(id);
     if (!response.success) {
-      throw new Error("Failed to delete user");
+      throw new Error(response.error?.message || "Failed to delete user");
     }
     return true;
   } catch (error) {
@@ -129,167 +199,20 @@ export default {
   /**
    * Create a new user (admin only)
    */
-  createUser: async (userData: {
-    email: string;
-    password: string;
-    name?: string;
-    role?: string;
-  }): Promise<User> => {
-    try {
-      const response = await api.post<User>("/users", userData);
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || "Failed to create user");
-      }
-
-      return response.data;
-    } catch (error) {
-      logger.error("Error creating user:", error);
-      throw error;
-    }
-  },
+  createUser,
 
   /**
-   * Update a user
+   * Update a user (admin only)
    */
-  updateUser: async (id: string, userData: Partial<User>): Promise<User> => {
-    try {
-      const response = await api.put<User>(`/users/${id}`, userData);
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || "Failed to update user");
-      }
-
-      return response.data;
-    } catch (error) {
-      logger.error(`Error updating user ${id}:`, error);
-      throw error;
-    }
-  },
+  updateUser,
 
   /**
    * Delete a user (admin only)
    */
-  deleteUser: async (id: string): Promise<boolean> => {
-    try {
-      const response = await api.delete<{ success: boolean }>(`/users/${id}`);
-
-      if (!response.success) {
-        throw new Error(response.error?.message || "Failed to delete user");
-      }
-
-      return true;
-    } catch (error) {
-      logger.error(`Error deleting user ${id}:`, error);
-      throw error;
-    }
-  },
+  deleteUser,
 
   /**
-   * Change user password
+   * Get user activity history
    */
-  changePassword: async (
-    id: string,
-    currentPassword: string,
-    newPassword: string,
-  ): Promise<boolean> => {
-    try {
-      const response = await api.post<{ success: boolean }>(
-        `/users/${id}/change-password`,
-        {
-          currentPassword,
-          newPassword,
-        },
-      );
-
-      if (!response.success) {
-        throw new Error(response.error?.message || "Failed to change password");
-      }
-
-      return true;
-    } catch (error) {
-      logger.error(`Error changing password for user ${id}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Reset user password (admin only)
-   */
-  resetPassword: async (id: string): Promise<{ temporaryPassword: string }> => {
-    try {
-      const response = await api.post<{ temporaryPassword: string }>(
-        `/users/${id}/reset-password`,
-      );
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || "Failed to reset password");
-      }
-
-      return response.data;
-    } catch (error) {
-      logger.error(`Error resetting password for user ${id}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Activate a user
-   */
-  activateUser: async (id: string): Promise<User> => {
-    try {
-      const response = await api.post<User>(`/users/${id}/activate`);
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || "Failed to activate user");
-      }
-
-      return response.data;
-    } catch (error) {
-      logger.error(`Error activating user ${id}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Deactivate a user
-   */
-  deactivateUser: async (id: string): Promise<User> => {
-    try {
-      const response = await api.post<User>(`/users/${id}/deactivate`);
-
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || "Failed to deactivate user");
-      }
-
-      return response.data;
-    } catch (error) {
-      logger.error(`Error deactivating user ${id}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Search users
-   */
-  searchUsers: async (
-    query: string,
-    page: number = 1,
-    pageSize: number = 20,
-  ): Promise<UserListResponse> => {
-    try {
-      const response = await api.get<UserListResponse>("/users/search", {
-        params: { query, page, pageSize },
-      });
-
-      if (!response.success) {
-        throw new Error(response.error?.message || "Failed to search users");
-      }
-
-      return response.data || { users: [], totalCount: 0, page, pageSize };
-    } catch (error) {
-      logger.error("Error searching users:", error);
-      throw error;
-    }
-  },
+  getUserActivity
 };

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -19,14 +20,21 @@ class Widget extends Model
     use HasFactory, HasUuids, SoftDeletes;
 
     /**
-     * Indicates if the model's ID is auto-incrementing.
+     * The primary key for the model.
+     *
+     * @var string
+     */
+    protected $primaryKey = 'id';
+
+    /**
+     * Indicates if the IDs are auto-incrementing.
      *
      * @var bool
      */
     public $incrementing = false;
 
     /**
-     * The data type of the auto-incrementing ID.
+     * The data type of the primary key.
      *
      * @var string
      */
@@ -38,6 +46,7 @@ class Widget extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'id',
         'name',
         'description',
         'user_id',
@@ -58,10 +67,10 @@ class Widget extends Model
      * @var array<string, string>
      */
     protected $casts = [
+        'knowledge_base_ids' => 'array',
         'visual_settings' => 'array',
         'behavioral_settings' => 'array',
         'content_settings' => 'array',
-        'knowledge_base_ids' => 'array',
         'allowed_domains' => 'array',
         'is_active' => 'boolean',
         'created_at' => 'datetime',
@@ -145,7 +154,7 @@ class Widget extends Model
     }
 
     /**
-     * Get the chat sessions associated with the widget.
+     * Get the chat sessions for the widget.
      */
     public function chatSessions(): HasMany
     {
@@ -164,5 +173,20 @@ class Widget extends Model
         }
 
         return \App\Models\AI\KnowledgeBase::whereIn('id', $this->knowledge_base_ids)->get();
+    }
+
+    /**
+     * Get the chat messages associated with this widget through sessions.
+     */
+    public function messages()
+    {
+        return $this->hasManyThrough(
+            \App\Models\Chat\ChatMessage::class,
+            \App\Models\Chat\ChatSession::class,
+            'widget_id',
+            'session_id',
+            'id',
+            'id'
+        );
     }
 }

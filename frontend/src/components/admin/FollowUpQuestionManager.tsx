@@ -53,9 +53,12 @@ const FollowUpQuestionManager: React.FC<FollowUpQuestionManagerProps> = ({
 
     try {
       const result = await followUpQuestionService.createQuestion({
-        configId,
+        config_id: configId,
         question: newQuestion,
-        displayOrder: questions.length,
+        display_order: questions.length,
+        is_active: true,
+        priority: "medium",
+        display_position: "middle",
       });
 
       if (result) {
@@ -141,7 +144,7 @@ const FollowUpQuestionManager: React.FC<FollowUpQuestionManagerProps> = ({
     // Update display order
     const updatedQuestions = newQuestions.map((q, i) => ({
       ...q,
-      displayOrder: i,
+      display_order: i,
     }));
     setQuestions(updatedQuestions);
 
@@ -244,10 +247,10 @@ const FollowUpQuestionManager: React.FC<FollowUpQuestionManagerProps> = ({
                     <div className="flex items-center space-x-2">
                       <Switch
                         id={`active-${question.id}`}
-                        checked={question.isActive}
+                        checked={question.is_active}
                         onCheckedChange={(checked) => {
                           handleUpdateQuestion(question.id!, {
-                            isActive: checked,
+                            is_active: checked,
                           });
                         }}
                       />

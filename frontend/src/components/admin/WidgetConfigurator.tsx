@@ -51,7 +51,7 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
-import { widgetConfigApi } from "@/services/apiService";
+import { widgetConfigApi } from "@/services/api/features/widget";
 import { useToast } from "@/components/ui/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import ChatWidget from "@/components/chat/ChatWidget";

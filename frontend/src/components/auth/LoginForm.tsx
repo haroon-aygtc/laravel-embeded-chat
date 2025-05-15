@@ -1,51 +1,113 @@
-import React, { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { MessageSquare, Lock } from "lucide-react";
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  MessageSquare,
+  Lock,
+  Mail,
+  LogIn,
+  ShieldCheck,
+  Shield
+} from "lucide-react";
 import { getCsrfToken } from "@/utils/auth";
 import logger from "@/utils/logger";
 
+// Create form schema with validation rules
+const loginFormSchema = z.object({
+  email: z.string().email({
+    message: "Please enter a valid email address",
+  }),
+  password: z.string().min(1, {
+    message: "Password is required",
+  }),
+});
+
+type LoginFormValues = z.infer<typeof loginFormSchema>;
+
 const LoginForm = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, isLoading, error, errors, clearError } = useAuth();
   const navigate = useNavigate();
   const isSubmittingRef = useRef(false);
+  const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Set up the form with React Hook Form
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(loginFormSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
 
+  // Update form errors when backend errors change
+  useEffect(() => {
+    if (errors) {
+      // Set errors from backend to the form state
+      Object.entries(errors).forEach(([field, messages]) => {
+        if (field === 'email' || field === 'password') {
+          form.setError(field as any, {
+            type: 'backend',
+            message: messages[0],
+          });
+        }
+      });
+    }
+  }, [errors, form]);
+
+  const onSubmit = async (values: LoginFormValues) => {
     // Prevent multiple submissions
     if (isSubmittingRef.current || isLoading) {
       logger.warn("Preventing duplicate form submission");
       return;
     }
 
+    // Clear any previous errors
+    clearError();
+
     try {
       // Set submission flag
       isSubmittingRef.current = true;
 
-      // Get CSRF token first - use consistent approach
+      // Get CSRF token first
       await getCsrfToken();
 
-      const success = await login(email, password);
+      const success = await login(values.email, values.password);
       if (success) {
+        toast({
+          title: "Login successful",
+          description: "Welcome back to the Last Lab!",
+          variant: "default",
+          className: "bg-green-500 text-white",
+        });
         navigate("/admin/dashboard");
+      } else {
+        toast({
+          title: "Login failed",
+          description: "Please check your credentials and try again",
+          variant: "destructive",
+        });
       }
     } catch (err) {
       logger.error("Login error:", err);
+      toast({
+        title: "Login error",
+        description: "An error occurred during login",
+        variant: "destructive",
+      });
     } finally {
       // Reset submission flag with delay
       setTimeout(() => {
@@ -55,103 +117,157 @@ const LoginForm = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
-            <div className="bg-primary/10 p-3 rounded-full">
-              <MessageSquare className="h-8 w-8 text-primary" />
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Left column - Branding/Illustration */}
+      <div className="hidden md:flex md:w-1/2 bg-primary/90 flex-col justify-center items-center text-white p-10 relative overflow-hidden">
+        <div className="relative z-10">
+          <div className="flex items-center justify-center mb-8">
+            <MessageSquare className="h-16 w-16" />
+          </div>
+          <h1 className="text-4xl font-bold mb-6">Welcome Back</h1>
+          <p className="text-xl mb-8 max-w-md text-center">
+            Sign in to continue managing your chat widgets and AI applications.
+          </p>
+
+          <div className="space-y-4 max-w-md">
+            <div className="flex items-center">
+              <ShieldCheck className="h-6 w-6 mr-3 text-green-300" />
+              <p>Secure admin dashboard</p>
+            </div>
+            <div className="flex items-center">
+              <Shield className="h-6 w-6 mr-3 text-green-300" />
+              <p>Privacy & security controls</p>
+            </div>
+            <div className="flex items-center">
+              <MessageSquare className="h-6 w-6 mr-3 text-green-300" />
+              <p>Chat analytics and reporting</p>
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold text-center">
-            Admin Login
-          </CardTitle>
-          <CardDescription className="text-center">
-            Enter your credentials to access the admin dashboard
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        </div>
+
+        {/* Background pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-0 left-0 right-0 h-40 bg-white/10"></div>
+          <div className="absolute bottom-0 left-0 right-0 h-40 bg-white/10"></div>
+          <div className="absolute inset-0 grid grid-cols-3 gap-1">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <div key={i} className="bg-white/5 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Right column - Form */}
+      <div className="w-full md:w-1/2 flex items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          <div className="mb-8 text-center">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Log in to your account</h2>
+            <p className="text-gray-600">
+              Enter your credentials to access the dashboard
+            </p>
+          </div>
+
           {error && (
-            <Card className="border-red-300 bg-red-50 mt-4">
-              <CardContent className="p-4">
-                <Alert variant="destructive">
-                  <AlertTitle>Error</AlertTitle>
-                  <AlertDescription>
-                    {typeof error === 'object' ? JSON.stringify(error) : error}
-                  </AlertDescription>
-                </Alert>
-              </CardContent>
-            </Card>
+            <div className="mb-6 p-4 border border-red-200 bg-red-50 text-red-700 rounded-lg">
+              {typeof error === "object" ? JSON.stringify(error) : error}
+            </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="admin@example.com"
-                  value={email}
-                  onChange={(e) => {
-                    clearError();
-                    setEmail(e.target.value);
-                  }}
-                  required
-                  className="pl-10"
-                />
-                <div className="absolute left-3 top-3 text-gray-400">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect width="20" height="16" x="2" y="4" rx="2" />
-                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                  </svg>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email Address</FormLabel>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          placeholder="you@example.com"
+                          type="email"
+                          className="pl-10"
+                          {...field}
+                        />
+                      </FormControl>
+                      <div className="absolute left-3 top-3 text-gray-400">
+                        <Mail size={16} />
+                      </div>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          placeholder="Enter your password"
+                          type="password"
+                          className="pl-10"
+                          {...field}
+                        />
+                      </FormControl>
+                      <div className="absolute left-3 top-3 text-gray-400">
+                        <Lock size={16} />
+                      </div>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex justify-end">
+                <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || isSubmittingRef.current}
+              >
+                {isLoading || isSubmittingRef.current ? (
+                  <span className="flex items-center">
+                    <span className="animate-spin mr-2">⊝</span>
+                    Logging in...
+                  </span>
+                ) : (
+                  <span className="flex items-center">
+                    Login
+                    <LogIn className="ml-2 h-4 w-4" />
+                  </span>
+                )}
+              </Button>
+
+              <div className="text-center mt-6">
+                <p className="text-sm text-gray-600">
+                  Don't have an account?{" "}
+                  <Link to="/signup" className="text-primary font-medium hover:underline">
+                    Create an account
+                  </Link>
+                </p>
+              </div>
+
+              {/* Demo credentials info */}
+              <div className="mt-8 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials</h4>
+                <div className="text-sm text-gray-600">
+                  Email: <span className="font-medium">admin@example.com</span><br />
+                  Password: <span className="font-medium">admin123</span>
                 </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => {
-                    clearError();
-                    setPassword(e.target.value);
-                  }}
-                  required
-                  className="pl-10"
-                />
-                <div className="absolute left-3 top-3 text-gray-400">
-                  <Lock size={16} />
-                </div>
-              </div>
-            </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading || isSubmittingRef.current}
-            >
-              {isLoading || isSubmittingRef.current ? "Logging in..." : "Login"}
-            </Button>
-          </form>
-        </CardContent>
-        <CardFooter className="flex justify-center">
-          <p className="text-sm text-gray-500">
-            Demo credentials: admin@example.com / admin123
-          </p>
-        </CardFooter>
-      </Card>
+            </form>
+          </Form>
+        </div>
+      </div>
     </div>
   );
 };

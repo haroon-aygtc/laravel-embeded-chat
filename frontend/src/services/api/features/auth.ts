@@ -4,9 +4,9 @@
  * This service provides methods for interacting with authentication endpoints.
  */
 
-import api from "@/services/axiosConfig";
-import { ensureCsrf } from "@/services/axiosConfig";
-import { setAuthToken, removeAuthToken, setAuthUser, getCsrfToken } from "@/utils/auth";
+import { api } from "@/services/api/middleware/apiMiddleware";
+import { authEndpoints } from "@/services/api/endpoints/authEndpoints";
+import { setAuthUser, getCsrfToken } from "@/utils/auth";
 import logger from "@/utils/logger";
 
 // Flag to prevent duplicate register calls
@@ -38,9 +38,19 @@ export interface User {
 }
 
 export interface AuthResponse {
+  status: 'success' | 'error';
+  message: string;
   user: User;
-  token: string;
-  expiresAt: string;
+  access_token: string;
+  token_type: string;
+  expiresAt?: string;
+  errors?: Record<string, string[]>;
+}
+
+export interface ApiErrorResponse {
+  status: 'error';
+  message: string;
+  errors?: Record<string, string[]>;
 }
 
 export interface PasswordResetRequest {
@@ -68,22 +78,33 @@ export const authApi = {
    */
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     try {
-      // Get CSRF token first
-      logger.info('Fetching CSRF token before login');
+      // Ensure we have CSRF token before login
       await getCsrfToken();
 
-      const response = await api.post<AuthResponse>("/auth/login", credentials);
+      const response = await api.post<AuthResponse>(authEndpoints.login, credentials);
 
-      if (response.data) {
-        setAuthToken(response.data.token);
+      // Check for successful response
+      if (response.success && response.data?.user) {
+        // Store user data in memory, token will be managed by HTTP-only cookies
         setAuthUser(response.data.user);
         logger.info('Login successful');
+      } else {
+        logger.warn('Login response missing user data:', response.data);
       }
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Login failed:', error);
-      throw error;
+
+      // Format error response
+      const errorMessage = error.error?.message || 'Failed to login. Please try again.';
+      const errorResponse: ApiErrorResponse = {
+        status: 'error',
+        message: errorMessage,
+        errors: error.error?.details || { general: ['Failed to login. Please try again.'] }
+      };
+
+      throw errorResponse;
     }
   },
 
@@ -94,38 +115,48 @@ export const authApi = {
     // Prevent duplicate register calls
     if (isRegisterInProgress) {
       logger.warn('Registration request already in progress');
-      throw new Error('Registration is already in progress. Please wait.');
+      throw {
+        status: 'error',
+        message: 'Registration is already in progress. Please wait.',
+        errors: { general: ['Registration is already in progress. Please wait.'] }
+      };
     }
 
     try {
       isRegisterInProgress = true;
 
-      // Get CSRF token first if needed - use one consistent approach
-      logger.info('Preparing for registration');
+      // Ensure we have CSRF token before registration
       await getCsrfToken();
 
       // Make registration request
       logger.info('Sending registration request');
-      const response = await api.post<AuthResponse>("/auth/register", data);
+      const response = await api.post<AuthResponse>(authEndpoints.register, data);
 
       // Process successful response
-      if (response.data && response.data.token) {
-        logger.info('Registration successful, storing auth data');
-        // Store the authentication token
-        setAuthToken(response.data.token);
+      if (response.success && response.data?.user) {
+        logger.info('Registration successful, storing user data');
 
         // Store the user data
         if (response.data.user) {
           setAuthUser(response.data.user);
         }
       } else {
-        logger.warn('Registration response missing token or user data:', response.data);
+        logger.warn('Registration response missing user data:', response.data);
       }
 
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Registration failed:', error);
-      throw error;
+
+      // Format error response
+      const errorMessage = error.error?.message || 'Failed to register. Please try again.';
+      const errorResponse: ApiErrorResponse = {
+        status: 'error',
+        message: errorMessage,
+        errors: error.error?.details || { general: ['Failed to register. Please try again.'] }
+      };
+
+      throw errorResponse;
     } finally {
       // Always reset the flag
       setTimeout(() => {
@@ -140,28 +171,54 @@ export const authApi = {
    */
   logout: async (): Promise<void> => {
     try {
+      // Ensure CSRF token before logout
       await getCsrfToken();
-      await api.post<void>("/auth/logout");
-    } finally {
-      // Clean up regardless of server response
-      removeAuthToken();
+
+      // Backend will invalidate the session and clear cookies
+      await api.post<void>(authEndpoints.logout);
+      logger.info('Logout API call successful');
+    } catch (error) {
+      logger.error('Logout failed:', error);
     }
   },
 
   /**
-   * Get the current user's profile
+   * Get current user data
    */
   getCurrentUser: async (): Promise<User> => {
-    const response = await api.get<User>("/auth/me");
-    return response.data;
+    try {
+      // Ensure we have CSRF token before getting current user
+      await getCsrfToken();
+
+      const response = await api.get<User>(authEndpoints.me);
+      if (!response.success || !response.data) {
+        logger.warn('Failed to get current user: No data returned from API');
+        throw new Error('Failed to get current user');
+      }
+      return response.data;
+    } catch (error: any) {
+      logger.error('Error getting current user:', error);
+      // If the error is a 401 Unauthorized, it's expected for non-logged in users
+      if (error.status === 401) {
+        logger.info('User not authenticated, as expected');
+      } else {
+        logger.error('Unexpected error fetching current user:', error);
+      }
+      throw error;
+    }
   },
 
   /**
    * Update the current user's profile
    */
   updateProfile: async (data: Partial<User>): Promise<User> => {
+    // Ensure CSRF token before updating profile
     await getCsrfToken();
+
     const response = await api.put<User>("/auth/profile", data);
+    if (!response.success || !response.data) {
+      throw new Error('Failed to update profile');
+    }
     return response.data;
   },
 
@@ -169,53 +226,57 @@ export const authApi = {
    * Request a password reset
    */
   requestPasswordReset: async (email: string): Promise<void> => {
-    await getCsrfToken();
-    await api.post<void>("/auth/forgot-password", { email });
+    await api.post<void>(authEndpoints.forgotPassword, { email });
   },
 
   /**
    * Reset password with token
    */
   resetPassword: async (token: string, password: string): Promise<void> => {
-    await getCsrfToken();
-    await api.post<void>("/auth/reset-password", { token, password });
+    await api.post<void>(authEndpoints.resetPassword, { token, password });
   },
 
   /**
    * Change current user's password
    */
-  changePassword: async (data: PasswordUpdateData): Promise<void> => {
+  changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
+    // Ensure CSRF token before changing password
     await getCsrfToken();
-    await api.post<void>("/auth/change-password", data);
+
+    await api.post<void>(authEndpoints.changePassword, { currentPassword, newPassword });
   },
 
   /**
    * Verify email with token
    */
   verifyEmail: async (token: string): Promise<void> => {
-    await getCsrfToken();
-    await api.post<void>("/auth/verify-email", { token });
+    await api.post<void>(authEndpoints.verifyEmail, { token });
   },
 
   /**
    * Refresh the authentication token
    */
   refreshToken: async (): Promise<{ token: string; expiresAt: string }> => {
+    // Ensure CSRF token before refreshing token
     await getCsrfToken();
-    const response = await api.post<{ token: string; expiresAt: string }>("/auth/refresh-token");
 
-    if (response.data) {
-      setAuthToken(response.data.token);
+    const response = await api.post<{ token: string; expiresAt: string }>(authEndpoints.refreshToken);
+
+    if (response.success && response.data) {
+      return response.data;
     }
 
-    return response.data;
+    throw new Error('Failed to refresh token');
   },
 
   /**
    * Get all active sessions for the current user
    */
-  getSessions: async (): Promise<UserSession[]> => {
-    const response = await api.get<UserSession[]>("/auth/sessions");
+  getSessions: async (): Promise<any[]> => {
+    const response = await api.get<any[]>(authEndpoints.sessions);
+    if (!response.success || !response.data) {
+      throw new Error('Failed to get sessions');
+    }
     return response.data;
   },
 
@@ -223,8 +284,7 @@ export const authApi = {
    * Revoke a specific session
    */
   revokeSession: async (sessionId: string): Promise<void> => {
-    await getCsrfToken();
-    await api.post<void>(`/auth/sessions/${sessionId}/revoke`);
+    await api.post<void>(authEndpoints.revokeSession(sessionId));
   },
 
   /**

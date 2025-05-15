@@ -40,7 +40,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import aiService from "@/services/aiService";
+import aiService from "@/services/ai/aiService";
 import { useAdmin } from "@/context/AdminContext";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -126,7 +126,9 @@ const AIConfiguration = () => {
 
   const loadModelPerformance = async () => {
     try {
-      const performance = await aiService.getModelPerformance("30d");
+      const performance = await aiService.getModelPerformance({
+        timeRange: "30d",
+      });
       if (performance && performance.modelUsage) {
         const formattedPerformance = performance.modelUsage.map(
           (model: any) => ({

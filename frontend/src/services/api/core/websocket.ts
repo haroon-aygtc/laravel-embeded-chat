@@ -148,6 +148,10 @@ export class WebSocketService {
 
         this.socket.onclose = event => {
           clearTimeout(connectionTimeout);
+
+          // Store the original connection state before changing it
+          const wasConnecting = this.connectionState === ConnectionState.CONNECTING;
+
           if (this.connectionState !== ConnectionState.FAILED) {
             this.connectionState = ConnectionState.DISCONNECTED;
           }
@@ -164,7 +168,8 @@ export class WebSocketService {
 
           this.handleReconnect();
 
-          if (this.connectionState ===  ConnectionState.CONNECTING) {
+          // Use the stored connection state to check if we were connecting
+          if (wasConnecting) {
             reject(
               new Error(
                 `WebSocket closed during connection: ${event.code} ${event.reason}`,

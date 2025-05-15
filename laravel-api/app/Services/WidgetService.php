@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Database\Eloquent\Collection;
 
 class WidgetService
 {
@@ -78,445 +79,212 @@ class WidgetService
     }
 
     /**
-     * Create a new widget
+     * Get all widgets for a specific user
      *
-     * @param array $data Widget data
-     * @return array
+     * @param int $userId User ID
+     * @return Collection
      */
-    public function createWidget(array $data): array
+    public function getAllWidgetsByUser(int $userId): Collection
     {
-        try {
-            // Validate the data
-            $validator = Validator::make($data, [
-                'name' => 'required|string|max:255',
-                'title' => 'required|string|max:255',
-                'visual_settings' => 'required|array',
-                'behavioral_settings' => 'required|array',
-                'content_settings' => 'required|array',
-            ]);
-
-            if ($validator->fails()) {
-                return [
-                    'status' => 'error',
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors()
-                ];
-            }
-
-            // Create new widget
-            $widget = new Widget();
-            $widget->id = (string) Str::uuid();
-            $widget->name = $data['name'];
-            $widget->description = $data['description'] ?? null;
-            $widget->user_id = $data['user_id'] ?? auth()->id();
-            $widget->context_rule_id = $data['context_rule_id'] ?? null;
-            $widget->knowledge_base_ids = $data['knowledge_base_ids'] ?? null;
-            $widget->title = $data['title'];
-            $widget->subtitle = $data['subtitle'] ?? null;
-            $widget->visual_settings = $data['visual_settings'];
-            $widget->behavioral_settings = $data['behavioral_settings'];
-            $widget->content_settings = $data['content_settings'];
-            $widget->allowed_domains = $data['allowed_domains'] ?? null;
-            $widget->is_active = $data['is_active'] ?? true;
-            $widget->save();
-
-            return [
-                'status' => 'success',
-                'data' => $widget,
-                'message' => 'Widget created successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error creating widget: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to create widget'
-            ];
-        }
+        return Widget::where('user_id', $userId)->get();
     }
 
     /**
-     * Update an existing widget
+     * Get a widget by ID
+     *
+     * @param string $id Widget ID
+     * @return Widget|null
+     */
+    public function getWidgetById(string $id): ?Widget
+    {
+        return Widget::find($id);
+    }
+
+    /**
+     * Create a new widget
+     *
+     * @param array $data Widget data
+     * @return Widget
+     */
+    public function createWidget(array $data): Widget
+    {
+        // Set defaults for required JSON fields if not provided
+        if (!isset($data['visual_settings'])) {
+            $data['visual_settings'] = [
+                'primaryColor' => '#4F46E5',
+                'secondaryColor' => '#10B981',
+                'backgroundColor' => '#FFFFFF',
+                'textColor' => '#1F2937',
+                'fontFamily' => 'Inter, sans-serif',
+            ];
+        }
+
+        if (!isset($data['behavioral_settings'])) {
+            $data['behavioral_settings'] = [
+                'initialState' => 'closed',
+                'autoOpen' => false,
+                'openDelay' => 3,
+            ];
+        }
+
+        if (!isset($data['content_settings'])) {
+            $data['content_settings'] = [
+                'initialMessage' => 'Hello! How can I assist you today?',
+                'placeholderText' => 'Type your message...',
+                'allowAttachments' => true,
+                'allowVoice' => true,
+                'allowEmoji' => true,
+            ];
+        }
+
+        // Default to active unless specified
+        if (!isset($data['is_active'])) {
+            $data['is_active'] = true;
+        }
+
+        // Create and return the widget
+        return Widget::create($data);
+    }
+
+    /**
+     * Update a widget
      *
      * @param string $id Widget ID
      * @param array $data Updated widget data
-     * @return array
+     * @return Widget|null
      */
-    public function updateWidget(string $id, array $data): array
+    public function updateWidget(string $id, array $data): ?Widget
     {
-        try {
-            $widget = Widget::findOrFail($id);
+        $widget = $this->getWidgetById($id);
 
-            // Update fields if provided
-            if (isset($data['name'])) {
-                $widget->name = $data['name'];
-            }
-
-            if (isset($data['description'])) {
-                $widget->description = $data['description'];
-            }
-
-            if (isset($data['context_rule_id'])) {
-                $widget->context_rule_id = $data['context_rule_id'];
-            }
-
-            if (isset($data['knowledge_base_ids'])) {
-                $widget->knowledge_base_ids = $data['knowledge_base_ids'];
-            }
-
-            if (isset($data['title'])) {
-                $widget->title = $data['title'];
-            }
-
-            if (isset($data['subtitle'])) {
-                $widget->subtitle = $data['subtitle'];
-            }
-
-            if (isset($data['visual_settings'])) {
-                // Merge to preserve any existing settings not provided in the update
-                $widget->visual_settings = array_merge($widget->visual_settings, $data['visual_settings']);
-            }
-
-            if (isset($data['behavioral_settings'])) {
-                // Merge to preserve any existing settings not provided in the update
-                $widget->behavioral_settings = array_merge($widget->behavioral_settings, $data['behavioral_settings']);
-            }
-
-            if (isset($data['content_settings'])) {
-                // Merge to preserve any existing settings not provided in the update
-                $widget->content_settings = array_merge($widget->content_settings, $data['content_settings']);
-            }
-
-            if (isset($data['allowed_domains'])) {
-                $widget->allowed_domains = $data['allowed_domains'];
-            }
-
-            if (isset($data['is_active'])) {
-                $widget->is_active = $data['is_active'];
-            }
-
-            $widget->save();
-
-            return [
-                'status' => 'success',
-                'data' => $widget,
-                'message' => 'Widget updated successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error updating widget: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to update widget'
-            ];
+        if (!$widget) {
+            return null;
         }
+
+        $widget->update($data);
+
+        return $widget->fresh();
     }
 
     /**
      * Delete a widget
      *
      * @param string $id Widget ID
-     * @return array
-     */
-    public function deleteWidget(string $id): array
-    {
-        try {
-            $widget = Widget::findOrFail($id);
-            $widget->delete();
-
-            return [
-                'status' => 'success',
-                'message' => 'Widget deleted successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error deleting widget: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to delete widget'
-            ];
-        }
-    }
-
-    /**
-     * Toggle a widget's active status
-     *
-     * @param string $id Widget ID
-     * @return array
-     */
-    public function toggleWidgetStatus(string $id): array
-    {
-        try {
-            $widget = Widget::findOrFail($id);
-            $widget->is_active = !$widget->is_active;
-            $widget->save();
-
-            return [
-                'status' => 'success',
-                'data' => $widget,
-                'message' => 'Widget status updated successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error toggling widget status: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to update widget status'
-            ];
-        }
-    }
-
-    /**
-     * Generate embed code for a widget
-     *
-     * @param string $id Widget ID
-     * @param string $type Embed type (iframe or webcomponent)
-     * @return array
-     */
-    public function generateEmbedCode(string $id, string $type = 'iframe'): array
-    {
-        try {
-            $widget = Widget::findOrFail($id);
-            $baseUrl = config('app.url');
-
-            $embedCode = '';
-
-            if ($type === 'iframe') {
-                $embedCode = '<iframe
-  src="' . $baseUrl . '/chat-embed/' . $widget->id . '"
-  width="100%"
-  height="600px"
-  style="border: none; position: fixed; bottom: 20px; right: 20px; width: 380px; height: 600px; z-index: 9999;"
-  title="Chat Widget"
-></iframe>';
-            } else {
-                $embedCode = '<script src="' . $baseUrl . '/chat-widget.js"></script>
-<chat-widget
-  widget-id="' . $widget->id . '"
-  primary-color="' . ($widget->visual_settings['colors']['primary'] ?? '#4F46E5') . '"
-  position="' . ($widget->visual_settings['position'] ?? 'bottom-right') . '"
-></chat-widget>';
-            }
-
-            return [
-                'status' => 'success',
-                'data' => [
-                    'embed_code' => $embedCode,
-                    'type' => $type
-                ],
-                'message' => 'Embed code generated successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error generating embed code: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to generate embed code'
-            ];
-        }
-    }
-
-    /**
-     * Validate if a domain is allowed for a widget
-     *
-     * @param string $id Widget ID
-     * @param string $domain Domain to validate
      * @return bool
      */
-    public function isValidDomain(string $id, string $domain): bool
+    public function deleteWidget(string $id): bool
     {
-        try {
-            $widget = Widget::findOrFail($id);
+        $widget = $this->getWidgetById($id);
 
-            // If no domains are specified, all domains are allowed
-            if (!$widget->allowed_domains || count($widget->allowed_domains) === 0) {
-                return true;
-            }
+        if (!$widget) {
+            return false;
+        }
 
+        return $widget->delete();
+    }
+
+    /**
+     * Update the widget's active status
+     *
+     * @param string $id Widget ID
+     * @param bool $isActive Whether to activate or deactivate
+     * @return Widget|null
+     */
+    public function updateWidgetStatus(string $id, bool $isActive): ?Widget
+    {
+        return $this->updateWidget($id, ['is_active' => $isActive]);
+    }
+
+    /**
+     * Get widgets by domain
+     *
+     * @param string $domain Domain name
+     * @return Collection
+     */
+    public function getWidgetsByDomain(string $domain): Collection
+    {
+        return Widget::where('domain', $domain)
+            ->orWhereJsonContains('allowed_domains', $domain)
+            ->where('is_active', true)
+            ->get();
+    }
+
+    /**
+     * Check if a widget can be embedded on a domain
+     *
+     * @param string $widgetId Widget ID
+     * @param string $domain Domain to check
+     * @return bool
+     */
+    public function canEmbedOnDomain(string $widgetId, string $domain): bool
+    {
+        $widget = $this->getWidgetById($widgetId);
+
+        if (!$widget || !$widget->is_active) {
+            return false;
+        }
+
+        // If no domain restrictions, allow all
+        if (empty($widget->domain) && empty($widget->allowed_domains)) {
+            return true;
+        }
+
+        // Check primary domain
+        if ($widget->domain === $domain) {
+            return true;
+        }
+
+        // Check allowed domains list
+        if (!empty($widget->allowed_domains)) {
             foreach ($widget->allowed_domains as $allowedDomain) {
-                // Check exact match
+                // Exact match
                 if ($allowedDomain === $domain) {
                     return true;
                 }
 
-                // Check wildcard subdomains
-                if (str_starts_with($allowedDomain, '*.')) {
-                    $baseDomain = substr($allowedDomain, 2); // Remove the '*.' prefix
-
-                    // Check if domain ends with the base domain
-                    if (str_ends_with($domain, $baseDomain) && substr_count($domain, '.') > 1) {
+                // Wildcard match (e.g., *.example.com)
+                if (Str::startsWith($allowedDomain, '*.')) {
+                    $wildcardDomain = substr($allowedDomain, 2); // Remove '*.'
+                    if (Str::endsWith($domain, $wildcardDomain)) {
                         return true;
                     }
                 }
             }
-
-            return false;
-        } catch (\Exception $e) {
-            Log::error('Error validating domain: ' . $e->getMessage());
-            return false;
         }
+
+        return false;
     }
 
     /**
-     * Get all widgets for a user
+     * Get widget configuration for public use (embedding)
      *
-     * @param string $userId User ID
-     * @return array
+     * @param string $widgetId Widget ID
+     * @param string|null $domain Requesting domain for validation
+     * @return array|null Widget configuration or null if not allowed
      */
-    public function getWidgetsByUser(string $userId): array
+    public function getPublicWidgetConfig(string $widgetId, ?string $domain = null): ?array
     {
-        try {
-            $widgets = Widget::where('user_id', $userId)->get();
+        $widget = $this->getWidgetById($widgetId);
 
-            return [
-                'status' => 'success',
-                'data' => $widgets,
-                'message' => 'User widgets retrieved successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error retrieving user widgets: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to retrieve user widgets'
-            ];
+        if (!$widget || !$widget->is_active) {
+            return null;
         }
-    }
 
-    /**
-     * Get widget analytics
-     *
-     * @param string $id Widget ID
-     * @param string $timeRange Time range (e.g., '7d', '30d', '90d')
-     * @return array
-     */
-    public function getWidgetAnalytics(string $id, string $timeRange = '7d'): array
-    {
-        try {
-            $widget = Widget::findOrFail($id);
-
-            // Determine date range based on timeRange
-            $startDate = null;
-            switch ($timeRange) {
-                case '7d':
-                    $startDate = now()->subDays(7);
-                    break;
-                case '30d':
-                    $startDate = now()->subDays(30);
-                    break;
-                case '90d':
-                    $startDate = now()->subDays(90);
-                    break;
-                default:
-                    $startDate = now()->subDays(7);
-            }
-
-            // Get session analytics
-            $sessions = $widget->chatSessions()
-                ->where('created_at', '>=', $startDate)
-                ->get();
-
-            $totalSessions = $sessions->count();
-
-            // Group sessions by day
-            $sessionsPerDay = $sessions->groupBy(function ($session) {
-                return $session->created_at->format('Y-m-d');
-            })->map(function ($group) {
-                return [
-                    'date' => $group->first()->created_at->format('Y-m-d'),
-                    'count' => $group->count()
-                ];
-            })->values();
-
-            // Get message analytics
-            $totalMessages = 0;
-            $messagesPerDay = [];
-
-            if ($totalSessions > 0) {
-                $sessionIds = $sessions->pluck('id');
-
-                $messages = \App\Models\Chat\ChatMessage::whereIn('session_id', $sessionIds)
-                    ->where('created_at', '>=', $startDate)
-                    ->get();
-
-                $totalMessages = $messages->count();
-
-                // Group messages by day
-                $messagesPerDay = $messages->groupBy(function ($message) {
-                    return $message->created_at->format('Y-m-d');
-                })->map(function ($group) {
-                    return [
-                        'date' => $group->first()->created_at->format('Y-m-d'),
-                        'count' => $group->count()
-                    ];
-                })->values();
-            }
-
-            // Calculate average messages per session
-            $avgMessagesPerSession = $totalSessions > 0 ? $totalMessages / $totalSessions : 0;
-
-            // Calculate average session duration
-            $avgSessionDuration = 0;
-            if ($totalSessions > 0) {
-                $totalDuration = 0;
-                foreach ($sessions as $session) {
-                    $messages = $session->messages()->orderBy('created_at')->get();
-
-                    if ($messages->count() >= 2) {
-                        $firstMessage = $messages->first();
-                        $lastMessage = $messages->last();
-
-                        $duration = $firstMessage->created_at->diffInSeconds($lastMessage->created_at);
-                        $totalDuration += $duration;
-                    }
-                }
-
-                $avgSessionDuration = $totalSessions > 0 ? $totalDuration / $totalSessions : 0;
-            }
-
-            // Get top domains
-            $topDomains = [];
-            if ($totalSessions > 0) {
-                $domainsCount = collect();
-
-                foreach ($sessions as $session) {
-                    if (isset($session->metadata['referrer'])) {
-                        $referrer = $session->metadata['referrer'];
-                        $domain = parse_url($referrer, PHP_URL_HOST) ?? 'unknown';
-
-                        if ($domainsCount->has($domain)) {
-                            $domainsCount[$domain] += 1;
-                        } else {
-                            $domainsCount[$domain] = 1;
-                        }
-                    }
-                }
-
-                $topDomains = $domainsCount->sortDesc()
-                    ->map(function ($count, $domain) {
-                        return [
-                            'domain' => $domain,
-                            'count' => $count
-                        ];
-                    })
-                    ->take(5)
-                    ->values();
-            }
-
-            return [
-                'status' => 'success',
-                'data' => [
-                    'totalSessions' => $totalSessions,
-                    'totalMessages' => $totalMessages,
-                    'averageMessagesPerSession' => round($avgMessagesPerSession, 2),
-                    'averageSessionDuration' => round($avgSessionDuration, 2),
-                    'sessionsPerDay' => $sessionsPerDay,
-                    'messagesPerDay' => $messagesPerDay,
-                    'topDomains' => $topDomains,
-                ],
-                'message' => 'Widget analytics retrieved successfully'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error retrieving widget analytics: ' . $e->getMessage());
-            return [
-                'status' => 'error',
-                'message' => 'Failed to retrieve widget analytics'
-            ];
+        // Validate domain if provided
+        if ($domain && !$this->canEmbedOnDomain($widgetId, $domain)) {
+            return null;
         }
+
+        // Return only the necessary data for the public widget
+        return [
+            'id' => $widget->id,
+            'title' => $widget->title,
+            'subtitle' => $widget->subtitle,
+            'visual_settings' => $widget->visual_settings,
+            'behavioral_settings' => $widget->behavioral_settings,
+            'content_settings' => $widget->content_settings,
+            'context_rule_id' => $widget->context_rule_id,
+        ];
     }
 
     /**
@@ -575,5 +343,250 @@ class WidgetService
             'created_at' => now()->toIso8601String(),
             'updated_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Toggle a widget's active status
+     *
+     * @param string $id Widget ID
+     * @return array
+     */
+    public function toggleWidgetStatus(string $id): array
+    {
+        try {
+            $widget = Widget::findOrFail($id);
+
+            // Check authorization
+            if ($widget->user_id !== Auth::id() && !Auth::user()->hasRole('admin')) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Unauthorized to toggle widget status'
+                ];
+            }
+
+            // Toggle status
+            $widget->is_active = !$widget->is_active;
+            $widget->save();
+
+            return [
+                'status' => 'success',
+                'data' => $widget,
+                'message' => 'Widget status toggled successfully'
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error toggling widget status: ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'message' => 'Failed to toggle widget status'
+            ];
+        }
+    }
+
+    /**
+     * Generate embed code for a widget
+     *
+     * @param string $id Widget ID
+     * @param string $type The type of embed code (script, iframe)
+     * @return array
+     */
+    public function generateEmbedCode(string $id, string $type = 'script'): array
+    {
+        try {
+            $widget = Widget::findOrFail($id);
+
+            $baseUrl = config('app.frontend_url', 'https://thelastlab.com');
+
+            if ($type === 'iframe') {
+                $code = '<iframe src="' . $baseUrl . '/embed/' . $widget->id . '" frameborder="0" width="100%" height="600px"></iframe>';
+            } else {
+                // Default script embed
+                $code = "<script src=\"{$baseUrl}/widget.js\" defer></script>\n" .
+                    "<script>\n" .
+                    "  document.addEventListener('DOMContentLoaded', function() {\n" .
+                    "    TheLastLab.initChat({\n" .
+                    "      widgetId: '{$widget->id}',\n" .
+                    "      container: 'tllab-chat-container', // Optional custom container ID\n" .
+                    "    });\n" .
+                    "  });\n" .
+                    "</script>\n" .
+                    "<div id=\"tllab-chat-container\"></div>";
+            }
+
+            return [
+                'status' => 'success',
+                'data' => [
+                    'code' => $code,
+                    'type' => $type
+                ],
+                'message' => 'Embed code generated successfully'
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error generating embed code: ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'message' => 'Failed to generate embed code'
+            ];
+        }
+    }
+
+    /**
+     * Get widget analytics data
+     *
+     * @param string $id Widget ID
+     * @param string $timeRange Time range for analytics (1d, 7d, 30d, etc.)
+     * @return array
+     */
+    public function getWidgetAnalytics(string $id, string $timeRange = '7d'): array
+    {
+        try {
+            $widget = Widget::findOrFail($id);
+
+            // Check authorization
+            if ($widget->user_id !== Auth::id() && !Auth::user()->hasRole('admin')) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Unauthorized to view widget analytics'
+                ];
+            }
+
+            // Parse time range
+            $startDate = now();
+            switch ($timeRange) {
+                case '1d':
+                    $startDate = $startDate->subDay();
+                    break;
+                case '7d':
+                    $startDate = $startDate->subDays(7);
+                    break;
+                case '30d':
+                    $startDate = $startDate->subDays(30);
+                    break;
+                case '90d':
+                    $startDate = $startDate->subDays(90);
+                    break;
+                default:
+                    $startDate = $startDate->subDays(7);
+            }
+
+            // Get chat sessions for this widget
+            $chatSessions = $widget->chatSessions()
+                ->where('created_at', '>=', $startDate)
+                ->get();
+
+            // Calculate metrics
+            $totalSessions = $chatSessions->count();
+            $totalMessages = 0;
+            $userMessages = 0;
+            $aiMessages = 0;
+            $averageResponseTime = 0;
+
+            $sessionData = [];
+
+            foreach ($chatSessions as $session) {
+                $messages = $session->messages;
+                $totalMessages += $messages->count();
+
+                foreach ($messages as $message) {
+                    if ($message->role === 'user') {
+                        $userMessages++;
+                    } elseif ($message->role === 'assistant') {
+                        $aiMessages++;
+                    }
+                }
+
+                $sessionData[] = [
+                    'id' => $session->id,
+                    'createdAt' => $session->created_at,
+                    'messageCount' => $messages->count(),
+                    'lastMessageAt' => $session->updated_at,
+                ];
+            }
+
+            // Group sessions by day
+            $sessionsByDay = $chatSessions->groupBy(function ($session) {
+                return $session->created_at->format('Y-m-d');
+            });
+
+            $dailySessions = [];
+
+            $currentDate = $startDate->copy();
+            $endDate = now();
+
+            while ($currentDate <= $endDate) {
+                $dateKey = $currentDate->format('Y-m-d');
+                $dailySessions[$dateKey] = [
+                    'date' => $dateKey,
+                    'count' => isset($sessionsByDay[$dateKey]) ? $sessionsByDay[$dateKey]->count() : 0
+                ];
+                $currentDate->addDay();
+            }
+
+            return [
+                'status' => 'success',
+                'data' => [
+                    'totalSessions' => $totalSessions,
+                    'totalMessages' => $totalMessages,
+                    'userMessages' => $userMessages,
+                    'aiMessages' => $aiMessages,
+                    'averageMessagesPerSession' => $totalSessions > 0 ? round($totalMessages / $totalSessions, 2) : 0,
+                    'sessionsPerDay' => array_values($dailySessions),
+                    'recentSessions' => array_slice($sessionData, 0, 10)
+                ],
+                'message' => 'Widget analytics retrieved successfully'
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error retrieving widget analytics: ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'message' => 'Failed to retrieve widget analytics'
+            ];
+        }
+    }
+
+    /**
+     * Get widgets for a specific user
+     *
+     * @param int $userId User ID
+     * @return array
+     */
+    public function getWidgetsByUser(int $userId): array
+    {
+        try {
+            // Check authorization
+            if ($userId !== Auth::id() && !Auth::user()->hasRole('admin')) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Unauthorized to view these widgets'
+                ];
+            }
+
+            $widgets = Widget::where('user_id', $userId)
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return [
+                'status' => 'success',
+                'data' => $widgets,
+                'message' => 'Widgets retrieved successfully'
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error retrieving user widgets: ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'message' => 'Failed to retrieve widgets'
+            ];
+        }
+    }
+
+    /**
+     * Check if a domain is valid for a widget
+     *
+     * @param string $widgetId Widget ID
+     * @param string $domain Domain to check
+     * @return bool
+     */
+    public function isValidDomain(string $widgetId, string $domain): bool
+    {
+        return $this->canEmbedOnDomain($widgetId, $domain);
     }
 }

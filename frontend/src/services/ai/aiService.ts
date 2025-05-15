@@ -1,6 +1,15 @@
-import { api } from '../api/middleware/apiMiddleware';
-import logger from '@/utils/logger';
+/**
+ * AI Service Module (Adapter)
+ * 
+ * This is an adapter for the new API structure to maintain backward compatibility.
+ * It imports from the new aiFeatures module but exposes the same interface as the old aiService.
+ */
 
+import { aiFeatures } from "../api/features/aiService";
+import logger from "@/utils/logger";
+import { AIModelRequest, AIModelResponse } from "./types";
+
+// Re-export interfaces for backward compatibility
 export interface AIModel {
     id: string;
     name: string;
@@ -33,13 +42,14 @@ export interface StreamingOptions extends GenerateOptions {
     onError?: (error: Error) => void;
 }
 
+// Adapter service that maintains the old interface but uses the new implementation
 const aiService = {
     /**
      * Get available AI models
      */
     getModels: async (): Promise<AIModel[]> => {
         try {
-            const response = await api.get<AIModel[]>('/ai/models');
+            const response = await aiFeatures.getModels();
             if (!response.success || !response.data) {
                 throw new Error('Failed to fetch AI models');
             }
@@ -55,30 +65,13 @@ const aiService = {
      */
     generate: async (prompt: string, options: GenerateOptions = {}): Promise<GenerateResponse | null> => {
         try {
-            const payload = {
-                prompt,
-                model: options.model || 'gpt-3.5-turbo',
-                temperature: options.temperature || 0.7,
-                maxTokens: options.maxTokens || 1000,
-                contextData: options.contextData,
-            };
-
-            const response = await api.post<any>('/ai/generate', payload);
+            const response = await aiFeatures.generate(prompt, options);
 
             if (!response.success || !response.data) {
                 throw new Error('Failed to generate AI response');
             }
 
-            // Parse the response into the expected format
-            return {
-                id: response.data.id,
-                content: response.data.choices[0].message.content,
-                usage: {
-                    promptTokens: response.data.usage.prompt_tokens,
-                    completionTokens: response.data.usage.completion_tokens,
-                    totalTokens: response.data.usage.total_tokens,
-                },
-            };
+            return response.data;
         } catch (error) {
             logger.error('Error generating AI response:', error);
             return null;
@@ -89,59 +82,7 @@ const aiService = {
      * Generate a streaming response from AI
      */
     streamGenerate: async (prompt: string, options: StreamingOptions = {}): Promise<void> => {
-        try {
-            const payload = {
-                prompt,
-                model: options.model || 'gpt-3.5-turbo',
-                temperature: options.temperature || 0.7,
-                maxTokens: options.maxTokens || 1000,
-                contextData: options.contextData,
-            };
-
-            // In a real implementation, you would use fetch with ReadableStream
-            // or EventSource to handle streaming. For now, we'll simulate it
-            // with the normal endpoint.
-
-            const response = await api.post<any>('/ai/generate', payload);
-
-            if (!response.success || !response.data) {
-                throw new Error('Failed to generate AI response');
-            }
-
-            // Simulate streaming by breaking the response into chunks
-            const content = response.data.choices[0].message.content;
-            const chunks = content.split(' ');
-
-            let accumulatedContent = '';
-
-            // Process chunks with a slight delay to simulate streaming
-            for (const chunk of chunks) {
-                await new Promise(resolve => setTimeout(resolve, 50));
-                accumulatedContent += chunk + ' ';
-
-                if (options.onProgress) {
-                    options.onProgress(accumulatedContent);
-                }
-            }
-
-            if (options.onComplete) {
-                options.onComplete({
-                    id: response.data.id,
-                    content: accumulatedContent,
-                    usage: {
-                        promptTokens: response.data.usage.prompt_tokens,
-                        completionTokens: response.data.usage.completion_tokens,
-                        totalTokens: response.data.usage.total_tokens,
-                    },
-                });
-            }
-        } catch (error) {
-            logger.error('Error streaming AI response:', error);
-
-            if (options.onError && error instanceof Error) {
-                options.onError(error);
-            }
-        }
+        return aiFeatures.streamGenerate(prompt, options);
     },
 
     /**
@@ -149,9 +90,7 @@ const aiService = {
      */
     getLogs: async (page: number = 1, perPage: number = 20): Promise<any> => {
         try {
-            const response = await api.get('/ai/logs', {
-                params: { page, perPage }
-            });
+            const response = await aiFeatures.getLogs(page, perPage);
 
             if (!response.success || !response.data) {
                 throw new Error('Failed to fetch AI logs');
@@ -163,6 +102,205 @@ const aiService = {
             return { logs: [], total: 0, page: 1, perPage: 20, lastPage: 1 };
         }
     },
+
+    /**
+     * Generate a response using AI models
+     */
+    generateResponse: async (
+        options: {
+            query: string;
+            contextRuleId?: string;
+            userId: string;
+            knowledgeBaseIds?: string[];
+            promptTemplate?: string;
+            systemPrompt?: string;
+            preferredModel?: string;
+            maxTokens?: number;
+            temperature?: number;
+            additionalParams?: Record<string, any>;
+        }
+    ): Promise<AIModelResponse> => {
+        try {
+            const response = await aiFeatures.generateResponse(options);
+
+            if (!response.success || !response.data) {
+                throw new Error(
+                    response.error?.message || "Failed to generate AI response",
+                );
+            }
+
+            return response.data;
+        } catch (error) {
+            logger.error("Error generating AI response:", error);
+
+            // Return a fallback response
+            return {
+                content: "I'm sorry, I encountered an error processing your request. Please try again later.",
+                modelUsed: "fallback-model",
+            };
+        }
+    },
+
+    /**
+     * Log an AI interaction to the database
+     */
+    logInteraction: async (data: {
+        userId: string;
+        query: string;
+        response: string;
+        modelUsed: string;
+        contextRuleId?: string;
+        knowledgeBaseResults?: number;
+        knowledgeBaseIds?: string[];
+        metadata?: Record<string, any>;
+    }) => {
+        try {
+            const response = await aiFeatures.logInteraction(data);
+
+            if (!response.success) {
+                logger.error("Error logging AI interaction:", response.error);
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            logger.error("Error logging AI interaction:", error);
+            return false;
+        }
+    },
+
+    /**
+     * Get AI interaction logs with pagination and filtering
+     */
+    getInteractionLogs: async (params: {
+        page: number;
+        pageSize: number;
+        query?: string;
+        modelUsed?: string;
+        contextRuleId?: string;
+        startDate?: string;
+        endDate?: string;
+    }) => {
+        try {
+            const response = await aiFeatures.getInteractionLogs(params);
+
+            if (!response.success) {
+                throw new Error(
+                    response.error?.message || "Failed to fetch AI interaction logs",
+                );
+            }
+
+            return response.data || {
+                logs: [],
+                totalItems: 0,
+                totalPages: 0,
+                currentPage: params.page,
+            };
+        } catch (error) {
+            logger.error("Error getting AI interaction logs:", error);
+            return {
+                logs: [],
+                totalItems: 0,
+                totalPages: 0,
+                currentPage: params.page,
+            };
+        }
+    },
+
+    /**
+     * Get available AI models
+     */
+    getAvailableModels: async () => {
+        try {
+            const response = await aiFeatures.getAvailableModels();
+
+            if (!response.success) {
+                throw new Error(
+                    response.error?.message || "Failed to fetch available AI models",
+                );
+            }
+
+            return response.data || [];
+        } catch (error) {
+            logger.error("Error getting available AI models:", error);
+            return [];
+        }
+    },
+
+    /**
+     * Set the default AI model
+     */
+    setDefaultModel: async (modelId: string) => {
+        try {
+            const response = await aiFeatures.setDefaultModel(modelId);
+
+            if (!response.success) {
+                throw new Error(
+                    response.error?.message || "Failed to set default AI model",
+                );
+            }
+
+            return true;
+        } catch (error) {
+            logger.error("Error setting default AI model:", error);
+            return false;
+        }
+    },
+
+    /**
+     * Get the default AI model
+     */
+    getDefaultModel: async () => {
+        try {
+            const response = await aiFeatures.getDefaultModel();
+
+            if (!response.success) {
+                throw new Error(
+                    response.error?.message || "Failed to get default AI model",
+                );
+            }
+
+            return response.data || null;
+        } catch (error) {
+            logger.error("Error getting default AI model:", error);
+            return null;
+        }
+    },
+
+    /**
+     * Get AI model performance metrics
+     */
+    getModelPerformance: async (params: {
+        timeRange?: string;
+        startDate?: string;
+        endDate?: string;
+    } = {}) => {
+        try {
+            const response = await aiFeatures.getModelPerformance(params);
+
+            if (!response.success) {
+                throw new Error(
+                    response.error?.message ||
+                    "Failed to fetch AI model performance metrics",
+                );
+            }
+
+            return response.data || {
+                modelUsage: [],
+                avgResponseTimes: [],
+                dailyUsage: [],
+                timeRange: params.timeRange || "7d",
+            };
+        } catch (error) {
+            logger.error("Error getting AI model performance metrics:", error);
+            return {
+                modelUsage: [],
+                avgResponseTimes: [],
+                dailyUsage: [],
+                timeRange: params.timeRange || "7d",
+            };
+        }
+    },
 };
 
-export default aiService; 
+export default aiService;

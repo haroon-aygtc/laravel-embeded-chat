@@ -75,65 +75,120 @@ class WebSocketManager {
 
         return new Promise((resolve, reject) => {
             try {
+                // Check if we are in a development environment (localhost)
+                const isLocalhost = window.location.hostname === 'localhost' ||
+                    window.location.hostname === '127.0.0.1';
+
+                // Get the protocol (ws or wss) based on the current page protocol
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const host = import.meta.env.VITE_API_WS_HOST || window.location.host;
+
+                // Use the environment variable or fallback to current host
+                let host = import.meta.env.VITE_API_WS_HOST || window.location.host;
+
+                // If we're running on localhost and there's no explicit WebSocket host,
+                // use a backend-specific port (assuming backend WebSocket runs on 6001)
+                if (isLocalhost && !import.meta.env.VITE_API_WS_HOST) {
+                    host = `${window.location.hostname}:6001`;
+                }
+
                 const wsUrl = `${protocol}//${host}${notificationEndpoints.wsNotifications(userId)}`;
 
-                const socket = new WebSocket(wsUrl);
-                this.socket = socket;
+                console.log('Connecting to WebSocket:', wsUrl);
 
-                socket.onopen = () => {
-                    this.reconnectAttempts = 0;
-                    this.isConnecting = false;
-                    console.log('WebSocket connection established');
-                    if (this.options.onOpen) this.options.onOpen();
-                    resolve();
-                };
+                // Add timeout to abort connection attempt if it takes too long
+                const connectionTimeout = setTimeout(() => {
+                    if (this.isConnecting) {
+                        this.isConnecting = false;
+                        console.warn('WebSocket connection attempt timed out');
+                        reject(new Error('Connection timeout'));
+                    }
+                }, 5000);
 
-                socket.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (this.options.onMessage) {
-                            this.options.onMessage(data);
+                // First check if WebSocket server is available with a simple fetch
+                // This helps avoid hanging WebSocket connection attempts
+                fetch(`${window.location.protocol}//${host}/api/websocket-status`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    mode: 'cors'
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('WebSocket server not available');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (!data.available) {
+                            throw new Error('WebSocket server reports as unavailable');
                         }
 
-                        if (data.type === 'notification' && this.options.onNotification) {
-                            this.options.onNotification(data.notification);
-                        }
-                    } catch (error) {
-                        console.error('Error processing WebSocket message:', error);
-                    }
-                };
+                        // If we reach here, WebSocket server should be available
+                        const socket = new WebSocket(wsUrl);
+                        this.socket = socket;
 
-                socket.onclose = (event) => {
-                    this.isConnecting = false;
+                        socket.onopen = () => {
+                            clearTimeout(connectionTimeout);
+                            this.reconnectAttempts = 0;
+                            this.isConnecting = false;
+                            console.log('WebSocket connection established');
+                            if (this.options.onOpen) this.options.onOpen();
+                            resolve();
+                        };
 
-                    if (this.options.onClose) {
-                        this.options.onClose(event);
-                    }
+                        socket.onmessage = (event) => {
+                            try {
+                                const data = JSON.parse(event.data);
 
-                    if (!event.wasClean) {
-                        console.warn(`WebSocket connection closed unexpectedly. Code: ${event.code}`);
-                        this.scheduleReconnect();
-                    } else {
-                        console.log('WebSocket connection closed cleanly');
-                    }
-                };
+                                if (this.options.onMessage) {
+                                    this.options.onMessage(data);
+                                }
 
-                socket.onerror = (error) => {
-                    this.isConnecting = false;
-                    console.error('WebSocket error:', error);
+                                if (data.type === 'notification' && this.options.onNotification) {
+                                    this.options.onNotification(data.notification);
+                                }
+                            } catch (error) {
+                                console.error('Error processing WebSocket message:', error);
+                            }
+                        };
 
-                    if (this.options.onError) {
-                        this.options.onError(error);
-                    }
+                        socket.onclose = (event) => {
+                            clearTimeout(connectionTimeout);
+                            this.isConnecting = false;
 
-                    reject(new Error('WebSocket connection error'));
-                };
+                            if (this.options.onClose) {
+                                this.options.onClose(event);
+                            }
+
+                            if (!event.wasClean) {
+                                console.debug(`WebSocket connection closed unexpectedly. Code: ${event.code}`);
+                                this.scheduleReconnect();
+                            } else {
+                                console.log('WebSocket connection closed cleanly');
+                            }
+                        };
+
+                        socket.onerror = (error) => {
+                            clearTimeout(connectionTimeout);
+                            this.isConnecting = false;
+                            console.debug('WebSocket error:', error);
+
+                            if (this.options.onError) {
+                                this.options.onError(error);
+                            }
+
+                            reject(new Error('WebSocket connection error'));
+                        };
+                    })
+                    .catch(error => {
+                        clearTimeout(connectionTimeout);
+                        this.isConnecting = false;
+                        console.debug('WebSocket server check failed:', error.message);
+                        console.debug('Falling back to polling immediately');
+                        reject(new Error(`WebSocket server unavailable: ${error.message}`));
+                    });
             } catch (error) {
                 this.isConnecting = false;
-                console.error('Failed to initialize WebSocket:', error);
+                console.debug('Failed to initialize WebSocket:', error);
                 reject(error);
             }
         });
@@ -311,41 +366,107 @@ export const notificationApi = {
     subscribeToNotifications: (
         userId: string,
         callback: (notification: Notification) => void,
-        pollingInterval: number = 30000
+        pollingInterval: number = 30000 // Default to 30 seconds
     ): () => void => {
         if (!userId) return () => { };
 
         let pollTimer: NodeJS.Timeout | null = null;
         let lastNotificationTimestamp = new Date().toISOString();
+        let isWebsocketMode = false;
+        let isPollingActive = false;
+        let isCheckingWebSocket = false;
 
-        // Try WebSocket connection first
-        notificationApi.connectToWebSocket(userId, {
-            onNotification: callback,
-            onError: () => {
-                // Fallback to polling if WebSocket fails
-                console.log('WebSocket connection failed, falling back to polling');
+        // Don't check WebSocket status more than once per minute
+        const wsCheckDebounceTime = 60000; // 1 minute
+        let lastWsCheckTime = 0;
+
+        // Try WebSocket connection first, but only if we haven't checked recently
+        const tryWebSocketConnection = () => {
+            const now = Date.now();
+            if (isCheckingWebSocket || now - lastWsCheckTime < wsCheckDebounceTime) {
+                // Skip WebSocket check if we checked recently or are currently checking
                 startPolling();
-            },
-            onClose: (event) => {
-                if (!event.wasClean) {
+                return;
+            }
+
+            isCheckingWebSocket = true;
+            lastWsCheckTime = now;
+
+            notificationApi.connectToWebSocket(userId, {
+                onNotification: callback,
+                onError: () => {
+                    isCheckingWebSocket = false;
+                    // Fallback to polling if WebSocket fails
+                    console.debug('WebSocket connection failed, falling back to polling');
+                    if (!isWebsocketMode && !isPollingActive) {
+                        startPolling();
+                    }
+                },
+                onClose: (event) => {
+                    isCheckingWebSocket = false;
+                    if (!event.wasClean && isWebsocketMode) {
+                        console.debug('WebSocket connection closed unexpectedly, falling back to polling');
+                        isWebsocketMode = false;
+                        if (!isPollingActive) {
+                            startPolling();
+                        }
+                    }
+                },
+                onOpen: () => {
+                    isCheckingWebSocket = false;
+                    isWebsocketMode = true;
+                    // If we were polling, stop it
+                    stopPolling();
+                }
+            }).then(success => {
+                isCheckingWebSocket = false;
+                if (!success && !isPollingActive) {
                     startPolling();
                 }
-            }
-        }).then(success => {
-            if (!success) {
-                startPolling();
-            }
-        });
+            }).catch(() => {
+                isCheckingWebSocket = false;
+                // Explicitly handle the rejection
+                if (!isPollingActive) {
+                    startPolling();
+                }
+            });
+        };
+
+        // Start by trying WebSocket
+        tryWebSocketConnection();
 
         // Polling fallback function
         const startPolling = () => {
-            if (pollTimer) clearInterval(pollTimer);
+            if (isPollingActive) return; // Prevent multiple polling loops
 
-            // Initial poll
-            pollForNotifications();
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+
+            isPollingActive = true;
+
+            // Initial poll with a small delay to prevent rapid calls
+            setTimeout(pollForNotifications, 1000);
 
             // Set up regular polling
             pollTimer = setInterval(pollForNotifications, pollingInterval);
+
+            // Every 5 minutes, try WebSocket again
+            setInterval(() => {
+                if (!isWebsocketMode) {
+                    tryWebSocketConnection();
+                }
+            }, 5 * 60 * 1000);
+        };
+
+        // Stop polling
+        const stopPolling = () => {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+            isPollingActive = false;
         };
 
         // Function to poll for new notifications
@@ -373,7 +494,7 @@ export const notificationApi = {
                     }
                 }
             } catch (error) {
-                console.error('Error polling for notifications:', error);
+                console.debug('Error polling for notifications:', error);
             }
         };
 
@@ -383,10 +504,7 @@ export const notificationApi = {
             notificationApi.disconnectFromWebSocket();
 
             // Clean up polling timer
-            if (pollTimer) {
-                clearInterval(pollTimer);
-                pollTimer = null;
-            }
+            stopPolling();
         };
     }
 }; 

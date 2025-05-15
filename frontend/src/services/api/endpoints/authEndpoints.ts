@@ -10,7 +10,7 @@ export const authEndpoints = {
   register: "/auth/register",
   logout: "/auth/logout",
   refreshToken: "/auth/refresh-token",
-  me: "/auth/me",
+  me: "/auth/profile",
 
   // Password management
   forgotPassword: "/auth/forgot-password",

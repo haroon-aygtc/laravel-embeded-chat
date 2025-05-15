@@ -52,6 +52,7 @@ class UserService
      */
     public function show(User $user): JsonResponse
     {
+        
         return response()->json($user);
     }
 

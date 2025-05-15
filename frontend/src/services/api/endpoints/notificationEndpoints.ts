@@ -5,14 +5,38 @@
  */
 
 export const notificationEndpoints = {
-    // Core notification functionality
-    getNotifications: "/notifications",
-    unreadCount: "/notifications/unread-count",
-    markAsRead: "/notifications/mark-read",
-    markAllAsRead: "/notifications/mark-all-read",
-    createNotification: "/notifications",
-    deleteNotification: (id: string) => `/notifications/${id}`,
+    /**
+     * WebSocket endpoint for real-time notifications
+     */
+    wsNotifications: (userId: string) => `/app/notification?user=${userId}`,
 
-    // WebSocket connection
-    wsNotifications: (userId: string) => `/ws/notifications?user=${userId}`,
+    /**
+     * Get notifications for a user
+     */
+    getNotifications: "/notifications",
+
+    /**
+     * Get unread notification count for a user
+     */
+    unreadCount: "/notifications/unread-count",
+
+    /**
+     * Mark notifications as read
+     */
+    markAsRead: "/notifications/mark-read",
+
+    /**
+     * Mark all notifications as read
+     */
+    markAllAsRead: "/notifications/mark-all-read",
+
+    /**
+     * Create a new notification
+     */
+    createNotification: "/notifications",
+
+    /**
+     * Delete a notification
+     */
+    deleteNotification: (id: string) => `/notifications/${id}`,
 }; 

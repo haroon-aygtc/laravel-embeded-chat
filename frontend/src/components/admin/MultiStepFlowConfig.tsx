@@ -553,16 +553,16 @@ const MultiStepFlowConfig: React.FC<MultiStepFlowConfigProps> = ({
               <div className="space-y-2">
                 <Label htmlFor="defaultFlow">Default Flow</Label>
                 <Select
-                  value={config.defaultFlow || ""}
+                  value={config.defaultFlow || "none"}
                   onValueChange={(value) =>
-                    setConfig({ ...config, defaultFlow: value || undefined })
+                    setConfig({ ...config, defaultFlow: value === "none" ? undefined : value })
                   }
                 >
                   <SelectTrigger id="defaultFlow">
                     <SelectValue placeholder="Select default flow" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {config.flows.map((flow) => (
                       <SelectItem key={flow.id} value={flow.id}>
                         {flow.name}
@@ -885,4 +885,20 @@ const MultiStepFlowConfig: React.FC<MultiStepFlowConfigProps> = ({
                             onClick={() => handleAddStep(activeFlow.id)}
                             disabled={!newStepQuestion}
                           >
-                            <Plus className="h-4
+                            <Plus className="h-4 w-4 mr-1" /> Add Step
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
+
+export default MultiStepFlowConfig;

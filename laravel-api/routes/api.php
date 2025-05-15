@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\Widget\PublicWidgetController;
 use App\Http\Controllers\Api\Chat\PublicChatController;
 use App\Http\Controllers\Api\WebSocket\WebSocketController;
 use Laravel\Sanctum\Http\Controllers\CsrfCookieController;
+use App\Http\Controllers\Api\User\RoleController;
 
 // Sanctum CSRF cookie route
 Route::get('/sanctum/csrf-cookie', [CsrfCookieController::class, 'show']);
@@ -37,6 +38,15 @@ Route::prefix('auth')->as('auth.')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/profile', [AuthController::class, 'profile']);
+
+        // Simple auth check endpoint that just returns success if authenticated
+        Route::get('/check', function () {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Authenticated',
+                'authenticated' => true
+            ]);
+        });
     });
 });
 
@@ -204,9 +214,22 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [WidgetController::class, 'store']);
         Route::put('/{id}', [WidgetController::class, 'update']);
         Route::delete('/{id}', [WidgetController::class, 'destroy']);
-        Route::post('/{id}/toggle-status', [WidgetController::class, 'toggleStatus']);
-        Route::get('/{id}/embed-code', [WidgetController::class, 'generateEmbedCode']);
+        Route::post('/{id}/activate', [WidgetController::class, 'activate']);
+        Route::post('/{id}/deactivate', [WidgetController::class, 'deactivate']);
+        Route::get('/{id}/embed-code', [WidgetController::class, 'getEmbedCode']);
+        Route::post('/{id}/status', [WidgetController::class, 'toggleStatus']);
+        Route::get('/{id}/analytics', [WidgetController::class, 'getAnalytics']);
+        Route::get('/user/{userId}', [WidgetController::class, 'getUserWidgets']);
         Route::post('/{id}/validate-domain', [WidgetController::class, 'validateDomain']);
+        Route::get('/default', [WidgetController::class, 'getDefaultWidget']);
+    });
+
+    // User role management
+    Route::prefix('roles')->group(function () {
+        Route::get('/', [RoleController::class, 'index']);
+        Route::get('/permissions', [RoleController::class, 'permissions']);
+        Route::get('/check/{role}', [RoleController::class, 'check']);
+        Route::put('/users/{userId}', [RoleController::class, 'update'])->middleware('permission:manage_users');
     });
 });
 
@@ -228,38 +251,38 @@ Route::middleware(['auth:sanctum'])->prefix('ai/providers')->name('ai.providers.
 */
 Route::group(['prefix' => 'knowledge-base', 'middleware' => ['auth:sanctum']], function () {
     // Existing Knowledge Base routes
-    Route::get('/', 'Api\KnowledgeBase\KnowledgeBaseController@index');
-    Route::post('/', 'Api\KnowledgeBase\KnowledgeBaseController@store');
-    Route::get('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@show');
-    Route::put('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@update');
-    Route::delete('/{id}', 'Api\KnowledgeBase\KnowledgeBaseController@destroy');
+    Route::get('/', [KnowledgeBaseController::class, 'index']);
+    Route::post('/', [KnowledgeBaseController::class, 'store']);
+    Route::get('/{id}', [KnowledgeBaseController::class, 'show']);
+    Route::put('/{id}', [KnowledgeBaseController::class, 'update']);
+    Route::delete('/{id}', [KnowledgeBaseController::class, 'destroy']);
 
     // Knowledge Base entries
-    Route::get('/{id}/entries', 'Api\KnowledgeBase\KnowledgeBaseController@getEntries');
-    Route::post('/{id}/entries', 'Api\KnowledgeBase\KnowledgeBaseController@addEntry');
-    Route::put('/entries/{entryId}', 'Api\KnowledgeBase\KnowledgeBaseController@updateEntry');
-    Route::delete('/entries/{entryId}', 'Api\KnowledgeBase\KnowledgeBaseController@deleteEntry');
+    Route::get('/{id}/entries', [KnowledgeBaseController::class, 'getEntries']);
+    Route::post('/{id}/entries', [KnowledgeBaseController::class, 'addEntry']);
+    Route::put('/entries/{entryId}', [KnowledgeBaseController::class, 'updateEntry']);
+    Route::delete('/entries/{entryId}', [KnowledgeBaseController::class, 'deleteEntry']);
 
     // Search and knowledge retrieval
-    Route::post('/search', 'Api\KnowledgeBase\KnowledgeBaseController@search');
-    Route::post('/advanced-search', 'Api\KnowledgeBase\KnowledgeBaseController@advancedSearch');
+    Route::post('/search', [KnowledgeBaseController::class, 'search']);
+    Route::post('/advanced-search', [KnowledgeBaseController::class, 'advancedSearch']);
 
     // Import/export
-    Route::post('/{id}/export', 'Api\KnowledgeBase\KnowledgeBaseController@export');
-    Route::post('/import', 'Api\KnowledgeBase\KnowledgeBaseController@import');
+    Route::post('/{id}/export', [KnowledgeBaseController::class, 'export']);
+    Route::post('/import', [KnowledgeBaseController::class, 'import']);
 
     // Vector search and embeddings
-    Route::post('/semantic-search', 'Api\KnowledgeBase\VectorSearchController@semanticSearch');
-    Route::post('/hybrid-search', 'Api\KnowledgeBase\VectorSearchController@hybridSearch');
-    Route::post('/entries/{entryId}/embeddings', 'Api\KnowledgeBase\VectorSearchController@generateEmbeddings');
-    Route::post('/{id}/generate-embeddings', 'Api\KnowledgeBase\VectorSearchController@generateEmbeddingsForKnowledgeBase');
-    Route::post('/entries/{entryId}/chunk', 'Api\KnowledgeBase\VectorSearchController@chunkEntry');
-    Route::post('/{id}/process-chunking', 'Api\KnowledgeBase\VectorSearchController@processKnowledgeBaseChunking');
-    Route::put('/{id}/vector-settings', 'Api\KnowledgeBase\VectorSearchController@updateVectorSearchSettings');
+    Route::post('/semantic-search', [VectorSearchController::class, 'semanticSearch']);
+    Route::post('/hybrid-search', [VectorSearchController::class, 'hybridSearch']);
+    Route::post('/entries/{entryId}/embeddings', [VectorSearchController::class, 'generateEmbeddings']);
+    Route::post('/{id}/generate-embeddings', [VectorSearchController::class, 'generateEmbeddingsForKnowledgeBase']);
+    Route::post('/entries/{entryId}/chunk', [VectorSearchController::class, 'chunkEntry']);
+    Route::post('/{id}/process-chunking', [VectorSearchController::class, 'processKnowledgeBaseChunking']);
+    Route::put('/{id}/vector-settings', [VectorSearchController::class, 'updateVectorSearchSettings']);
 
     // Stats and Analytics
-    Route::get('/{id}/stats', 'Api\KnowledgeBase\KnowledgeBaseController@getStats');
-    Route::post('/entries/{entryId}/keyword-highlights', 'Api\KnowledgeBase\KnowledgeBaseController@generateKeywordHighlights');
+    Route::get('/{id}/stats', [KnowledgeBaseController::class, 'getStats']);
+    Route::post('/entries/{entryId}/keyword-highlights', [KnowledgeBaseController::class, 'generateKeywordHighlights']);
 });
 
 // Prompt Templates
@@ -305,4 +328,24 @@ Route::middleware('auth:sanctum')->prefix('chat')->group(function () {
 Route::prefix('public/chat')->group(function () {
     // Add the public typing status endpoint
     Route::post('/sessions/{sessionId}/typing', [PublicChatController::class, 'updateTypingStatus']);
+});
+
+/**
+ * WebSocket Status Endpoint
+ * Simple endpoint to check if WebSocket server is available
+ */
+Route::get('/websocket-status', function () {
+    // In production, you would do actual checks to verify WebSocket server status
+    // For now, just respond that it's not available to make the frontend fall back to polling
+
+    // Add cache headers to prevent frequent calls
+    return response()->json([
+        'available' => false,
+        'message' => 'WebSocket server is temporarily unavailable, using polling fallback',
+        'cache_time' => now()->toIso8601String(),
+        'next_check' => now()->addMinutes(5)->toIso8601String(),
+    ])->withHeaders([
+        'Cache-Control' => 'public, max-age=300', // Cache for 5 minutes
+        'Expires' => now()->addMinutes(5)->toRfc7231String(),
+    ]);
 });

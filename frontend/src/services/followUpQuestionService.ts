@@ -8,7 +8,7 @@
 import logger from "@/utils/logger";
 import { followUpApi, FollowUpQuestion } from "./api/features/followupfeatures";
 
-export type FollowUpQuestionData = FollowUpQuestion;
+export type FollowUpQuestionData = Omit<FollowUpQuestion, 'id'> & { id?: string };
 
 const followUpQuestionService = {
   /**
@@ -40,12 +40,22 @@ const followUpQuestionService = {
    * Create a new follow-up question
    */
   createQuestion: async (
-    data: FollowUpQuestionData,
+    data: Partial<FollowUpQuestionData>,
   ): Promise<FollowUpQuestionData | null> => {
     try {
+      // Make sure we have the required fields with defaults
+      const questionData = {
+        config_id: data.config_id,
+        question: data.question || '',
+        display_order: data.display_order || 0,
+        is_active: data.is_active !== undefined ? data.is_active : true,
+        priority: data.priority || 'medium',
+        display_position: data.display_position || 'middle',
+      };
+
       const response = await followUpApi.addQuestion(
-        data.config_id,
-        data,
+        data.config_id!,
+        questionData as FollowUpQuestion,
       );
 
       if (!response.success || !response.data) {
@@ -143,7 +153,7 @@ const followUpQuestionService = {
       if (!response.success) {
         throw new Error(
           response.error?.message ||
-            "Failed to fetch follow-up questions for chat"
+          "Failed to fetch follow-up questions for chat"
         );
       }
 
@@ -153,14 +163,14 @@ const followUpQuestionService = {
         .sort((a, b) => {
           // Sort by priority first
           const priorities = { high: 3, medium: 2, low: 1 };
-          const priorityDiff = 
+          const priorityDiff =
             (priorities[b.priority] || 0) - (priorities[a.priority] || 0);
-          
+
           // If same priority, sort by display order
           if (priorityDiff === 0) {
             return (a.display_order || 0) - (b.display_order || 0);
           }
-          
+
           return priorityDiff;
         })
         .slice(0, limit)

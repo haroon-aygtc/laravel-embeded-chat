@@ -6,7 +6,7 @@ import EmbedOptionsSection from "./sections/EmbedOptionsSection";
 import CTASection from "./sections/CTASection";
 import Footer from "./layout/Footer";
 import ChatWidgetWithConfig from "./chat/ChatWidgetWithConfig";
-import { widgetConfigService } from "@/services/widgetConfigService";
+import logger from "@/utils/logger";
 
 interface WidgetConfig {
   initiallyOpen: boolean;
@@ -28,42 +28,26 @@ const Home = () => {
     position: "bottom-right",
     showOnMobile: true,
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fetchAttempted = useRef(false);
 
   useEffect(() => {
-    if (!fetchAttempted.current) {
-      fetchAttempted.current = true;
-      fetchWidgetConfig();
-    }
+    // Always use hardcoded config for demo purposes
+    // No API call needed which avoids potential auth loops
+    const defaultConfig: WidgetConfig = {
+      initiallyOpen: false,
+      contextMode: "restricted",
+      contextName: "Website Assistance",
+      title: "Chat Assistant",
+      primaryColor: "#4f46e5",
+      position: "bottom-right",
+      showOnMobile: true,
+    };
+
+    setWidgetConfig(defaultConfig);
+    setLoading(false);
   }, []);
-
-  const fetchWidgetConfig = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Use the hardcoded widget config from EmbedOptionsSection instead of API call
-      const defaultConfig: WidgetConfig = {
-        initiallyOpen: false,
-        contextMode: "restricted",
-        contextName: "Website Assistance",
-        title: "Chat Assistant",
-        primaryColor: "#4f46e5",
-        position: "bottom-right",
-        showOnMobile: true,
-      };
-
-      setWidgetConfig(defaultConfig);
-    } catch (error) {
-      console.error("Error setting widget config:", error);
-      setError("An unexpected error occurred");
-      // We'll use the default config defined in state instead
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -91,7 +75,7 @@ const Home = () => {
             position: widgetConfig.position,
             initiallyOpen: widgetConfig.initiallyOpen
           }}
-          previewMode={false}
+          previewMode={true} // Always use preview mode on home page to avoid API calls
         />
       )}
     </div>

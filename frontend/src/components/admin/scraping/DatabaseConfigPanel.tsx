@@ -17,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { SelectorConfig, DatabaseConfig } from "@/services/scrapingService";
+import { SelectorConfig } from "@/services/scrapingService";
 import { Loader2, Database, Save, AlertCircle, HelpCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -34,14 +34,24 @@ import {
 } from "@/components/ui/accordion";
 import axios from "axios";
 
-interface DatabaseConfigPanelProps {
-  selectors: SelectorConfig[];
-  onSaveConfig: (config: DatabaseConfig) => void;
+interface DatabaseConfig {
+  table: string;
+  columns: Record<string, string>;
+  dbType: "postgres" | "mysql" | "sqlite" | "mongodb";
+  options: {
+    includeTimestamp: boolean;
+    includeUrl: boolean;
+  };
 }
 
 interface TableInfo {
   name: string;
   columns: string[];
+}
+
+interface DatabaseConfigPanelProps {
+  selectors: SelectorConfig[];
+  onSaveConfig: (config: DatabaseConfig) => void;
 }
 
 const DatabaseConfigPanel: React.FC<DatabaseConfigPanelProps> = ({
@@ -375,7 +385,7 @@ const DatabaseConfigPanel: React.FC<DatabaseConfigPanelProps> = ({
                                 const matchingColumn = table.columns.find(
                                   (col) =>
                                     col.toLowerCase() ===
-                                      selector.name.toLowerCase() ||
+                                    selector.name.toLowerCase() ||
                                     col
                                       .toLowerCase()
                                       .includes(selector.name.toLowerCase()),
@@ -457,18 +467,18 @@ const DatabaseConfigPanel: React.FC<DatabaseConfigPanelProps> = ({
                           </div>
                           <div className="flex gap-2 items-center">
                             <Select
-                              value={columnMappings[selector.id] || ""}
+                              value={columnMappings[selector.id] || "skip"}
                               onValueChange={(value) =>
-                                handleColumnMappingChange(selector.id, value)
+                                handleColumnMappingChange(selector.id, value === "skip" ? "" : value)
                               }
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select column">
-                                  {columnMappings[selector.id] || ""}
+                                  {columnMappings[selector.id] || "Skip"}
                                 </SelectValue>
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">-- Skip --</SelectItem>
+                                <SelectItem value="skip">-- Skip --</SelectItem>
                                 {table?.columns.map((column) => (
                                   <SelectItem key={column} value={column}>
                                     {column}

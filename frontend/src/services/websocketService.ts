@@ -874,7 +874,7 @@ class WebSocketService {
 
 // Create a singleton instance with a configurable URL from environment variables
 // Default to a secure WebSocket connection if no URL is provided
-const WS_URL = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:3000";
+const WS_URL = import.meta.env.VITE_WEBSOCKET_URL || "ws://localhost:9000";
 
 // Initialize the WebSocket service with production-ready configuration
 const websocketService = new WebSocketService({

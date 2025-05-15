@@ -41,10 +41,17 @@ export interface UserQueryParams {
 }
 
 export interface UserListResponse {
-  users: UserProfile[];
-  totalCount: number;
-  totalPages: number;
-  currentPage: number;
+  // Laravel paginator format
+  data: any[];
+  current_page: number;
+  per_page: number;
+  total: number;
+  last_page: number;
+  // Legacy format for backward compatibility
+  users?: UserProfile[];
+  totalCount?: number;
+  totalPages?: number;
+  currentPage?: number;
 }
 
 export const userApi = {

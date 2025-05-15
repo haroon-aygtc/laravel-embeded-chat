@@ -63,7 +63,7 @@ const ChatWidgetWithConfig: React.FC<ChatWidgetWithConfigProps> = ({
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // WebSocket setup
+  // WebSocket setup - use relative path to avoid CORS and proxy issues
   const wsUrl = sessionId ? `/chat/${sessionId}/ws` : undefined;
   const {
     connected,

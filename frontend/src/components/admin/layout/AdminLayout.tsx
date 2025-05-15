@@ -1,14 +1,16 @@
 import React, { useState, ReactNode } from "react";
 import Sidebar from "./Sidebar";
-import {DashboardHeader} from "../DashboardHeader";
+import { DashboardHeader } from "../DashboardHeader";
 import { Toaster } from "@/components/ui/toaster";
 import ErrorBoundary from "@/components/ui/error-boundary";
 
 interface AdminLayoutProps {
   children: ReactNode;
+  title?: string;
+  subtitle?: string;
 }
 
-const AdminLayout = ({ children }: AdminLayoutProps) => {
+const AdminLayout = ({ children, title = "Dashboard", subtitle = "" }: AdminLayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (

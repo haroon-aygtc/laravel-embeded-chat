@@ -15,7 +15,7 @@ export { authApi } from './api/features/auth';
 import { User, UserActivity, CreateUserDTO } from '@/types';
 import logger from "@/utils/logger";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9000/api';
 
 // Helper function to handle API responses
 const handleResponse = async (response: Response) => {

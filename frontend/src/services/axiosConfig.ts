@@ -1,5 +1,11 @@
+/**
+ * Axios Configuration
+ * 
+ * Configures axios with interceptors for authentication, error handling, and CSRF protection.
+ */
+
 import axios from "axios";
-import { getAuthToken, isTokenExpired } from "@/utils/auth";
+import { getCsrfToken } from "@/utils/auth";
 import { env } from "@/config/env";
 import logger from "@/utils/logger";
 
@@ -27,7 +33,7 @@ api.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
-    
+
     // Handle CORS preflight requests
     if (error.config && error.config.method?.toLowerCase() === 'options') {
       return Promise.resolve({ status: 200, data: {} });
@@ -63,7 +69,7 @@ api.interceptors.response.use(
   }
 );
 
-// Request interceptor for adding auth token and request ID
+// Request interceptor for adding CSRF token
 api.interceptors.request.use(
   async (config) => {
     // Generate a unique request ID
@@ -75,19 +81,25 @@ api.interceptors.request.use(
       return config;
     }
 
-    // Add auth token if available
-    const token = getAuthToken();
-    if (token) {
-      // Check if token is expired
-      if (isTokenExpired(token)) {
-        // Token is expired, redirect to login
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("auth_user");
-        if (!window.location.pathname.startsWith("/auth/")) {
-          window.location.href = "/auth/login?redirect=" + encodeURIComponent(window.location.pathname);
+    // For non-GET requests, ensure CSRF token is present
+    if (config.method !== 'get') {
+      try {
+        // Ensure CSRF token is available
+        await getCsrfToken();
+
+        // Extract CSRF token from cookie for headers
+        const cookies = document.cookie.split(';');
+        const xsrfToken = cookies
+          .find(cookie => cookie.trim().startsWith('XSRF-TOKEN='))
+          ?.split('=')[1];
+
+        if (xsrfToken) {
+          // Laravel expects the decrypted value
+          config.headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfToken);
         }
-      } else {
-        config.headers.Authorization = `Bearer ${token}`;
+      } catch (error) {
+        logger.error('Failed to get CSRF token for request:', error);
+        // Continue without token - the request may fail with 419
       }
     }
 
@@ -102,8 +114,7 @@ api.interceptors.response.use(
   async (error) => {
     // Handle session expiration
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("auth_user");
+      // Only redirect if not already on an auth page
       if (!window.location.pathname.startsWith("/auth/")) {
         window.location.href = "/auth/login?redirect=" + encodeURIComponent(window.location.pathname);
       }
@@ -130,8 +141,7 @@ api.interceptors.response.use(
 
 // Helper to ensure CSRF token is present before POST/PUT/DELETE requests
 export const ensureCsrf = async (): Promise<void> => {
-  // This is an empty placeholder now - we will handle CSRF token fetching at the component level
-  logger.debug('CSRF ensure called, but handling moved to component level');
+  await getCsrfToken();
 };
 
 export default api;
