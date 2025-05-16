@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Widget Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            background-color: #4f46e5;
+            color: white;
+            padding: 1rem 0;
+            text-align: center;
+        }
+
+        h1 {
+            margin: 0;
+        }
+
+        .content {
+            margin-top: 2rem;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
+        .demo-container {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            height: 500px;
+            margin-top: 1rem;
+        }
+
+        .code-block {
+            background-color: #f9fafb;
+            border-radius: 8px;
+            padding: 1rem;
+            overflow: auto;
+            border: 1px solid #e5e7eb;
+        }
+
+        .btn {
+            background-color: #4f46e5;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+
+        .btn:hover {
+            background-color: #4338ca;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="container">
+            <h1>Laravel Embedded Chat Widget Demo</h1>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="content">
+            <div class="section">
+                <h2>Floating Chat Widget Example</h2>
+                <p>This example shows the chat widget as a floating button in the corner of the page.</p>
+                <div class="code-block">
+                    <pre><code>&lt;script src="embed.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  document.addEventListener('DOMContentLoaded', function() {
+    LaravelChat.init({
+      widgetId: 'your-widget-id',
+      position: 'bottom-right',
+      primaryColor: '#4f46e5'
+    });
+  });
+&lt;/script&gt;</code></pre>
+                </div>
+                <p>The widget should appear in the bottom-right corner of this page.</p>
+            </div>
+
+            <div class="section">
+                <h2>Embedded Chat Widget Example</h2>
+                <p>This example shows the chat widget embedded directly within a container on the page.</p>
+                <div class="code-block">
+                    <pre><code>&lt;div id="embedded-chat" style="width: 100%; height: 500px;"&gt;&lt;/div&gt;
+
+&lt;script&gt;
+  LaravelChat.init({
+    widgetId: 'your-widget-id',
+    container: 'embedded-chat'
+  });
+&lt;/script&gt;</code></pre>
+                </div>
+                <div id="embedded-chat" class="demo-container"></div>
+            </div>
+
+            <div class="section">
+                <h2>Chat Controls Example</h2>
+                <p>You can programmatically control the chat widget:</p>
+                <div class="code-block">
+                    <pre><code>// Open the chat widget
+LaravelChat.open();
+
+// Close the chat widget
+LaravelChat.close();
+
+// Remove the chat widget from the page
+LaravelChat.destroy();</code></pre>
+                </div>
+                <button class="btn" onclick="openChat()">Open Chat</button>
+                <button class="btn" onclick="closeChat()">Close Chat</button>
+                <button class="btn" onclick="reinitChat()">Reinitialize Chat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the chat widget script -->
+    <script src="embed.js"></script>
+
+    <script>
+        // Initialize the floating chat widget
+        document.addEventListener('DOMContentLoaded', function () {
+            // Initialize the floating widget
+            LaravelChat.init({
+                widgetId: 'demo-widget-id', // Replace with your actual widget ID
+                position: 'bottom-right',
+                primaryColor: '#4f46e5'
+            });
+
+            // Initialize the embedded widget
+            LaravelChat.init({
+                widgetId: 'demo-widget-id', // Replace with your actual widget ID
+                container: 'embedded-chat',
+                primaryColor: '#4f46e5'
+            });
+        });
+
+        // Control functions
+        function openChat() {
+            LaravelChat.open();
+        }
+
+        function closeChat() {
+            LaravelChat.close();
+        }
+
+        function reinitChat() {
+            LaravelChat.destroy();
+
+            // Reinitialize after a short delay
+            setTimeout(function () {
+                LaravelChat.init({
+                    widgetId: 'demo-widget-id', // Replace with your actual widget ID
+                    position: 'bottom-right',
+                    primaryColor: '#4f46e5'
+                });
+            }, 500);
+        }
+    </script>
+</body>
+
+</html>

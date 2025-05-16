@@ -94,10 +94,9 @@ apiClient.interceptors.response.use(
     async (error) => {
         // Handle authentication errors
         if (error.response && error.response.status === 401) {
-            // Redirect to login if not already on an auth page
-            if (!window.location.pathname.startsWith('/auth/')) {
-                window.location.href = '/auth/login?redirect=' + encodeURIComponent(window.location.pathname);
-            }
+            // Don't automatically redirect - let the components handle auth redirects
+            // This prevents conflicts with the login/register flows
+            logger.warn('Authentication error detected');
         }
 
         // Log all errors

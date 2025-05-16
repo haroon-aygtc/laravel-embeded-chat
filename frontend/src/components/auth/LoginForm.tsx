@@ -1,57 +1,55 @@
-import React, { useState, useRef, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
-import { z } from "zod";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/use-toast';
+import logger from '@/utils/logger';
+import { AuthService } from '@/services/authService';
+import { Mail, MessageSquare } from 'lucide-react';
+import { LockClosedIcon } from '@radix-ui/react-icons';
+import { useAuth } from '@/context/AuthContext';
 import {
   Form,
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
-  FormMessage,
+  FormMessage
 } from "@/components/ui/form";
-import { useToast } from "@/components/ui/use-toast";
-import {
-  MessageSquare,
-  Lock,
-  Mail,
-  LogIn,
-  ShieldCheck,
-  Shield
-} from "lucide-react";
-import { getCsrfToken } from "@/utils/auth";
-import logger from "@/utils/logger";
+import LoadingSpinner from "@/components/ui/loading-spinner";
+
+// Type for the form
+
+const authService = AuthService.getInstance();
 
 // Create form schema with validation rules
 const loginFormSchema = z.object({
   email: z.string().email({
     message: "Please enter a valid email address",
-  }),
-  password: z.string().min(1, {
-    message: "Password is required",
+  }).trim().toLowerCase(),
+  password: z.string().min(6, {
+    message: "Password must be at least 6 characters",
   }),
 });
 
 type LoginFormValues = z.infer<typeof loginFormSchema>;
 
 const LoginForm = () => {
-  const { login, isLoading, error, errors, clearError } = useAuth();
+  const { login, isLoading, errors, clearError, user } = useAuth();
   const navigate = useNavigate();
-  const isSubmittingRef = useRef(false);
-  const { toast } = useToast();
-
-  // Set up the form with React Hook Form
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: {
-      email: "",
-      password: "",
-    },
+      email: '',
+      password: ''
+    }
   });
+
+  const isSubmittingRef = useRef(false);
+  const [showFormErrors, setShowFormErrors] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   // Update form errors when backend errors change
   useEffect(() => {
@@ -68,45 +66,80 @@ const LoginForm = () => {
     }
   }, [errors, form]);
 
-  const onSubmit = async (values: LoginFormValues) => {
-    // Prevent multiple submissions
-    if (isSubmittingRef.current || isLoading) {
-      logger.warn("Preventing duplicate form submission");
-      return;
-    }
-
-    // Clear any previous errors
-    clearError();
-
+  const onSubmit = async (values: LoginFormValues, event?: React.BaseSyntheticEvent) => {
     try {
+      // Prevent browser's default form submission
+      if (event) {
+        event.preventDefault();
+      }
+
+      // Prevent multiple submissions
+      if (isSubmittingRef.current || isLoading) {
+        logger.warn("Preventing duplicate form submission");
+        return;
+      }
+
+      // Clear any previous errors
+      clearError();
+      form.clearErrors();
+
+      // Show validation errors if any
+      setShowFormErrors(true);
+
       // Set submission flag
       isSubmittingRef.current = true;
 
-      // Get CSRF token first
-      await getCsrfToken();
+      console.log("Starting login process...");
 
+      console.log("Attempting login with credentials...");
       const success = await login(values.email, values.password);
+
       if (success) {
+        // Reset form after successful login
+        form.reset();
+        setShowFormErrors(false);
+
+        // Log the success
+        console.log("Login successful - preparing to redirect");
+
+        // First check if user has admin role
+        const currentUser = authService.getUser();
+        if (currentUser && currentUser.role === 'admin') {
+          navigate('/admin/dashboard', { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true });
+        }
+
         toast({
           title: "Login successful",
-          description: "Welcome back to the Last Lab!",
+          description: "Welcome back!",
           variant: "default",
           className: "bg-green-500 text-white",
         });
-        navigate("/admin/dashboard");
       } else {
+        // Handle login failure
+        const errorMessage = error ? error.toString() : "Please check your credentials and try again";
         toast({
           title: "Login failed",
-          description: "Please check your credentials and try again",
+          description: errorMessage,
           variant: "destructive",
         });
+        form.setError('root', {
+          type: 'manual',
+          message: errorMessage
+        });
       }
-    } catch (err) {
+    } catch (err: any) {
       logger.error("Login error:", err);
+      const errorMessage = err?.message || "An unexpected error occurred during login";
       toast({
         title: "Login error",
-        description: "An error occurred during login",
+        description: errorMessage,
         variant: "destructive",
+      });
+      form.setError('root', {
+        type: 'manual',
+        message: errorMessage
       });
     } finally {
       // Reset submission flag with delay
@@ -128,60 +161,26 @@ const LoginForm = () => {
           <p className="text-xl mb-8 max-w-md text-center">
             Sign in to continue managing your chat widgets and AI applications.
           </p>
-
-          <div className="space-y-4 max-w-md">
-            <div className="flex items-center">
-              <ShieldCheck className="h-6 w-6 mr-3 text-green-300" />
-              <p>Secure admin dashboard</p>
-            </div>
-            <div className="flex items-center">
-              <Shield className="h-6 w-6 mr-3 text-green-300" />
-              <p>Privacy & security controls</p>
-            </div>
-            <div className="flex items-center">
-              <MessageSquare className="h-6 w-6 mr-3 text-green-300" />
-              <p>Chat analytics and reporting</p>
-            </div>
-          </div>
         </div>
-
-        {/* Background pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 left-0 right-0 h-40 bg-white/10"></div>
-          <div className="absolute bottom-0 left-0 right-0 h-40 bg-white/10"></div>
-          <div className="absolute inset-0 grid grid-cols-3 gap-1">
-            {Array.from({ length: 20 }).map((_, i) => (
-              <div key={i} className="bg-white/5 rounded-lg"></div>
-            ))}
-          </div>
-        </div>
+        <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-primary/90 to-transparent"></div>
       </div>
 
-      {/* Right column - Form */}
-      <div className="w-full md:w-1/2 flex items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <div className="mb-8 text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Log in to your account</h2>
-            <p className="text-gray-600">
-              Enter your credentials to access the dashboard
-            </p>
+      {/* Right column - Login Form */}
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-8 bg-white rounded-lg shadow-lg p-8">
+          <div>
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+              Sign in to your account
+            </h2>
           </div>
-
-          {error && (
-            <div className="mb-6 p-4 border border-red-200 bg-red-50 text-red-700 rounded-lg">
-              {typeof error === "object" ? JSON.stringify(error) : error}
-            </div>
-          )}
-
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Address</FormLabel>
-                    <div className="relative">
+            <form className="mt-8 space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
+              <div className="rounded-md shadow-sm -space-y-px">
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
                       <FormControl>
                         <Input
                           placeholder="you@example.com"
@@ -193,19 +192,15 @@ const LoginForm = () => {
                       <div className="absolute left-3 top-3 text-gray-400">
                         <Mail size={16} />
                       </div>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <div className="relative">
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
                       <FormControl>
                         <Input
                           placeholder="Enter your password"
@@ -215,54 +210,52 @@ const LoginForm = () => {
                         />
                       </FormControl>
                       <div className="absolute left-3 top-3 text-gray-400">
-                        <Lock size={16} />
+                        <LockClosedIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
                       </div>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex justify-end">
-                <Link to="/forgot-password" className="text-sm text-primary hover:underline">
-                  Forgot password?
-                </Link>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isLoading || isSubmittingRef.current}
-              >
-                {isLoading || isSubmittingRef.current ? (
-                  <span className="flex items-center">
-                    <span className="animate-spin mr-2">⊝</span>
-                    Logging in...
-                  </span>
-                ) : (
-                  <span className="flex items-center">
-                    Login
-                    <LogIn className="ml-2 h-4 w-4" />
-                  </span>
-                )}
-              </Button>
-
-              <div className="text-center mt-6">
-                <p className="text-sm text-gray-600">
-                  Don't have an account?{" "}
-                  <Link to="/signup" className="text-primary font-medium hover:underline">
-                    Create an account
-                  </Link>
-                </p>
-              </div>
-
-              {/* Demo credentials info */}
-              <div className="mt-8 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials</h4>
-                <div className="text-sm text-gray-600">
-                  Email: <span className="font-medium">admin@example.com</span><br />
-                  Password: <span className="font-medium">admin123</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <input
+                    id="remember-me"
+                    name="remember-me"
+                    type="checkbox"
+                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                  />
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+                    Remember me
+                  </label>
                 </div>
+
+                <div className="text-sm">
+                  <a href="/forgot-password" className="font-medium text-primary hover:text-primary-dark">
+                    Forgot your password?
+                  </a>
+                </div>
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={isSubmittingRef.current || isLoading}
+                  className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                >
+                  <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                    <LockClosedIcon className="h-5 w-5 text-primary-500 group-hover:text-primary-400" aria-hidden="true" />
+                  </span>
+                  {isLoading ? (
+                    <>
+                      <LoadingSpinner className="h-5 w-5 mr-2" />
+                      <span>Signing in...</span>
+                    </>
+                  ) : (
+                    <span>Sign in</span>
+                  )}
+                </button>
               </div>
             </form>
           </Form>

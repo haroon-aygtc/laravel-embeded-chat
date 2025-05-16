@@ -1,5 +1,51 @@
 # Laravel Embedded Chat
 
+## Embedded Chat Widget
+
+The application includes a powerful embeddable chat widget that can be easily integrated into any website to provide AI-powered customer support and assistance.
+
+### Key Features
+
+- **Simple Integration**: Add the widget to any website with just a few lines of code
+- **Customizable Appearance**: Change colors, position, size, and more to match your brand
+- **Multiple Integration Methods**: Floating button or directly embedded in a container
+- **Persistent Sessions**: Chat sessions are maintained between page visits
+- **Real-time Responses**: Powered by the same AI capabilities as the main application
+- **Knowledge Base Integration**: Chat responses are augmented with your knowledge base data
+- **Mobile-Friendly**: Responsive design works on all device sizes
+
+### Integration Methods
+
+#### Floating Chat Widget
+```html
+<script src="https://your-domain.com/embed.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    LaravelChat.init({
+      widgetId: 'your-widget-id',
+      position: 'bottom-right',
+      primaryColor: '#4f46e5'
+    });
+  });
+</script>
+```
+
+#### Embedded Chat Widget
+```html
+<script src="https://your-domain.com/embed.js"></script>
+<div id="chat-container" style="width: 100%; height: 600px;"></div>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    LaravelChat.init({
+      widgetId: 'your-widget-id',
+      container: 'chat-container'
+    });
+  });
+</script>
+```
+
+See the [Embed Documentation](./frontend/public/embed-docs.html) for more details and configuration options.
+
 ## Knowledge Base System
 
 The application includes a powerful knowledge base system that enables semantic search and AI-augmented responses.

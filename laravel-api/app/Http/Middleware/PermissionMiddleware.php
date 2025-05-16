@@ -12,39 +12,6 @@ use Symfony\Component\HttpFoundation\Response;
 class PermissionMiddleware
 {
     /**
-     * The role permission map defines what each role can do
-     */
-    protected array $rolePermissions = [
-        'admin' => ['*'], // Admin can do anything
-        'editor' => [
-            'create_context_rule',
-            'edit_context_rule',
-            'delete_context_rule',
-            'create_knowledge_base',
-            'edit_knowledge_base',
-            'delete_knowledge_base',
-            'create_prompt_template',
-            'edit_prompt_template',
-            'delete_prompt_template',
-            'manage_chat',
-            'view_analytics',
-            'view_logs',
-        ],
-        'viewer' => [
-            'view_analytics',
-            'view_logs',
-            'view_context_rule',
-            'view_knowledge_base',
-            'view_prompt_template',
-        ],
-        'user' => [
-            'view_own_resources',
-            'edit_own_resources',
-            'manage_own_chat',
-        ],
-    ];
-
-    /**
      * Handle an incoming request.
      *
      * @param  Closure(Request): (Response)  $next
@@ -60,22 +27,14 @@ class PermissionMiddleware
 
         $user = Auth::user();
 
-        // Admin has all permissions
-        if ($user->role === 'admin') {
-            return $next($request);
-        }
-
-        // Get the user's role permissions
-        $userRolePermissions = $this->rolePermissions[$user->role] ?? [];
-
-        // Check if the user has the wildcard permission
-        if (in_array('*', $userRolePermissions)) {
+        // Super Admin and Admin have all permissions
+        if ($user->isSuperAdmin || $user->isAdmin) {
             return $next($request);
         }
 
         // Check if the user has at least one of the required permissions
         foreach ($permissions as $permission) {
-            if (in_array($permission, $userRolePermissions)) {
+            if ($user->hasPermission($permission)) {
                 return $next($request);
             }
         }

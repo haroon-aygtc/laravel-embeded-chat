@@ -280,5 +280,30 @@ export const widgetClientService = {
       logger.error('Error getting follow-up questions:', error);
       return [];
     }
+  },
+
+  /**
+   * Update typing status for a chat session
+   * 
+   * @param sessionId Session identifier
+   * @param isTyping Whether the user is typing
+   * @param clientId Unique client identifier
+   * @returns Success status
+   */
+  async updateTypingStatus(sessionId: string, isTyping: boolean, clientId: string): Promise<boolean> {
+    try {
+      const response = await axios.post<ApiResponse<{ status: string }>>(
+        `${API_BASE_URL}/public/chat/sessions/${sessionId}/typing`,
+        {
+          is_typing: isTyping,
+          client_id: clientId
+        }
+      );
+
+      return response.data.status === 'success';
+    } catch (error) {
+      logger.error('Error updating typing status:', error);
+      return false;
+    }
   }
 }; 

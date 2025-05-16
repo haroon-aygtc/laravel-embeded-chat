@@ -10,7 +10,7 @@ export const authEndpoints = {
   register: "/auth/register",
   logout: "/auth/logout",
   refreshToken: "/auth/refresh-token",
-  me: "/auth/profile",
+  me: "/profile",
 
   // Password management
   forgotPassword: "/auth/forgot-password",
@@ -24,4 +24,10 @@ export const authEndpoints = {
   // Session management
   sessions: "/auth/sessions",
   revokeSession: (sessionId: string) => `/auth/sessions/${sessionId}/revoke`,
+
+  // User management
+  users: "/auth/users",
+  userProfile: "/profile",
+  userRole: (userId: string) => `/auth/users/${userId}/role`,
+  userById: (userId: string) => `/auth/users/${userId}`,
 };

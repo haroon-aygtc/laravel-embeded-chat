@@ -23,10 +23,10 @@ import logger from "@/utils/logger";
 const signupFormSchema = z.object({
   name: z.string().min(2, {
     message: "Name must be at least 2 characters",
-  }),
+  }).trim(),
   email: z.string().email({
     message: "Please enter a valid email address",
-  }),
+  }).trim().toLowerCase(),
   password: z.string().min(8, {
     message: "Password must be at least 8 characters",
   }).refine(
@@ -44,10 +44,11 @@ const signupFormSchema = z.object({
 type SignupFormValues = z.infer<typeof signupFormSchema>;
 
 const SignupForm = () => {
-  const { register: authRegister, isLoading, error, errors, clearError } = useAuth();
+  const { register: authRegister, isLoading, error, errors, clearError, user } = useAuth();
   const navigate = useNavigate();
   const isSubmittingRef = useRef(false);
   const { toast } = useToast();
+  const [showFormErrors, setShowFormErrors] = useState(false);
 
   // Set up the form with React Hook Form
   const form = useForm<SignupFormValues>({
@@ -58,6 +59,7 @@ const SignupForm = () => {
       password: "",
       confirmPassword: "",
     },
+    mode: "onBlur", // Validate fields when they lose focus
   });
 
   // Update form errors when backend errors change
@@ -75,7 +77,12 @@ const SignupForm = () => {
     }
   }, [errors, form]);
 
-  const onSubmit = async (values: SignupFormValues) => {
+  const onSubmit = async (values: SignupFormValues, event?: React.BaseSyntheticEvent) => {
+    // Prevent browser's default form submission
+    if (event) {
+      event.preventDefault();
+    }
+
     // Prevent multiple submissions
     if (isSubmittingRef.current || isLoading) {
       logger.warn("Preventing duplicate form submission");
@@ -85,37 +92,82 @@ const SignupForm = () => {
     // Clear any previous errors
     clearError();
 
+    // Show validation errors if any
+    setShowFormErrors(true);
+
     try {
       // Set submission flag
       isSubmittingRef.current = true;
 
-      // Get CSRF token before submission
-      await getCsrfToken();
+      console.log("Starting registration process...");
+
+      // First clear any existing CSRF tokens
+      document.cookie = "XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      document.cookie = "laravel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+      // Wait a moment before getting a fresh token
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Get CSRF token first with retry logic
+      try {
+        console.log("Fetching CSRF token...");
+        await getCsrfToken();
+      } catch (csrfError) {
+        logger.warn("CSRF token fetch failed, retrying once...", csrfError);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log("Retrying CSRF token fetch...");
+        await getCsrfToken();
+      }
 
       logger.info("Attempting to register user");
+      console.log("Sending registration request...");
       const success = await authRegister(values.name, values.email, values.password);
 
       if (success) {
-        logger.info("Registration successful, navigating to home");
+        logger.info("Registration successful");
+
+        // Reset form after successful registration
+        form.reset();
+        setShowFormErrors(false);
+
+        // Log the success state for debugging
+        console.log("Registration successful, authenticated status:", !!user);
+
         toast({
           title: "Account created!",
-          description: "You've been successfully registered",
+          description: "You've been successfully registered and logged in",
           variant: "default",
           className: "bg-green-500 text-white",
         });
-        navigate("/");
+
+        // Use React Router's navigate function instead of window.location
+        // This avoids a full page reload and maintains the React app state
+        setTimeout(() => {
+          console.log("Redirecting to dashboard after successful registration");
+          navigate('/dashboard', { replace: true });
+        }, 2000);
+
+      } else if (error) {
+        // Backend errors already set in auth context
+        toast({
+          title: "Registration failed",
+          description: error,
+          variant: "destructive",
+        });
       } else {
         toast({
           title: "Registration failed",
-          description: "Please try again",
+          description: "Please check the form and try again",
           variant: "destructive",
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       logger.error("Registration error:", err);
+      const errorMessage = err?.message || "An unexpected error occurred during registration";
+
       toast({
         title: "Registration error",
-        description: "An error occurred during registration",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -179,12 +231,54 @@ const SignupForm = () => {
 
           {error && (
             <div className="mb-6 p-4 border border-red-200 bg-red-50 text-red-700 rounded-lg">
-              {typeof error === "object" ? JSON.stringify(error) : error}
+              <p className="font-medium mb-1">Registration Error</p>
+              <p>{error}</p>
+              {errors && Object.keys(errors).length > 0 && (
+                <ul className="mt-2 list-disc list-inside">
+                  {Object.entries(errors).map(([field, messages]) => (
+                    <li key={field} className="text-sm">
+                      <span className="font-semibold capitalize">{field}:</span> {messages[0]}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Password strength indicator */}
+          {form.watch("password") && (
+            <div className="mb-4 p-3 border border-gray-200 bg-gray-50 rounded-lg">
+              <h4 className="text-sm font-medium text-gray-800 mb-2">Password Requirements:</h4>
+              <ul className="space-y-1">
+                <li className={`text-sm flex items-center ${form.watch("password").length >= 8 ? 'text-green-600' : 'text-gray-500'}`}>
+                  <CheckCircle2 className={`h-4 w-4 mr-2 ${form.watch("password").length >= 8 ? 'text-green-600' : 'text-gray-400'}`} />
+                  At least 8 characters
+                </li>
+                <li className={`text-sm flex items-center ${/[A-Z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
+                  <CheckCircle2 className={`h-4 w-4 mr-2 ${/[A-Z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
+                  At least 1 uppercase letter
+                </li>
+                <li className={`text-sm flex items-center ${/[a-z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
+                  <CheckCircle2 className={`h-4 w-4 mr-2 ${/[a-z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
+                  At least 1 lowercase letter
+                </li>
+                <li className={`text-sm flex items-center ${/[0-9]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
+                  <CheckCircle2 className={`h-4 w-4 mr-2 ${/[0-9]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
+                  At least 1 number
+                </li>
+              </ul>
             </div>
           )}
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                console.log("Form submitted");
+                form.handleSubmit(onSubmit)(e);
+              }}
+              className="space-y-5"
+            >
               <FormField
                 control={form.control}
                 name="name"

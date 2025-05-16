@@ -5,14 +5,41 @@
  * request/response formatting, logging, and retry capabilities.
  */
 
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '@/utils/logger';
 import { getCsrfToken as getAuthCsrfToken } from '@/utils/auth';
+import { env } from '@/config/env';
 
-// API base URL from environment variables
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// Extended request config to include our custom properties
+interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
+  skipDuplicateProtection?: boolean;
+  _pendingRequestCleanup?: () => void;
+}
+
+// API base URL from environment variables with fallback
+const BASE_URL = env.API_BASE_URL || 'http://localhost:9000/api';
+logger.debug(`API Middleware initialized with BASE_URL: ${BASE_URL}`);
 const API_TIMEOUT = 30000; // 30 seconds
+
+// Track in-flight requests to prevent duplicates
+const pendingRequests = new Map();
+
+// Generate a request key based on method and URL
+const getRequestKey = (config) => {
+  return `${config.method}:${config.url}${JSON.stringify(config.params || {})}`;
+};
+
+// Cancel any pending duplicate requests
+const cancelPendingRequests = (config) => {
+  const requestKey = getRequestKey(config);
+  if (pendingRequests.has(requestKey)) {
+    const controller = pendingRequests.get(requestKey);
+    logger.debug(`Canceling duplicate request: ${requestKey}`);
+    controller.abort();
+    pendingRequests.delete(requestKey);
+  }
+};
 
 /**
  * Request configuration options
@@ -139,7 +166,7 @@ const getCsrfToken = async (): Promise<void> => {
     logger.debug('Fetching CSRF token...');
 
     // Get the correct base URL from environment
-    const baseUrl = import.meta.env.VITE_API_URL || '/api';
+    const baseUrl = env.API_BASE_URL || 'http://localhost:9000/api';
     // Remove /api from the end if present to get the correct sanctum endpoint
     const sanctumUrl = baseUrl.replace(/\/api\/?$/, '') + '/sanctum/csrf-cookie';
 
@@ -188,6 +215,34 @@ const createApiClient = (): AxiosInstance => {
       // Add request ID for tracking
       config.headers['X-Request-ID'] = generateRequestId();
 
+      // For HTTP methods that should be unique, create an AbortController and 
+      // cancel any duplicate in-flight requests (GET, HEAD, OPTIONS)
+      if (['get', 'head', 'options'].includes(config.method?.toLowerCase() || '')) {
+        // Skip duplicate protection for specific operations like polling 
+        const skipDuplicateProtection = (config as ExtendedAxiosRequestConfig).skipDuplicateProtection === true;
+
+        if (!skipDuplicateProtection) {
+          // Set up a new AbortController for this request
+          const controller = new AbortController();
+          config.signal = controller.signal;
+
+          // Cancel any duplicate requests already in flight
+          cancelPendingRequests(config);
+
+          // Store this request's controller
+          const requestKey = getRequestKey(config);
+          pendingRequests.set(requestKey, controller);
+
+          // Remove from tracking when the request completes (in either interceptor)
+          const removeFromTracking = () => {
+            pendingRequests.delete(requestKey);
+          };
+
+          // Attach cleanup to the config for use in response interceptor
+          (config as ExtendedAxiosRequestConfig)._pendingRequestCleanup = removeFromTracking;
+        }
+      }
+
       // For non-GET requests, ensure CSRF token is present
       if (config.method !== 'get') {
         try {
@@ -203,10 +258,36 @@ const createApiClient = (): AxiosInstance => {
           if (xsrfToken) {
             // Laravel expects the decrypted value, which is provided in the X-XSRF-TOKEN header
             config.headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfToken);
+            logger.debug('Added CSRF token to request headers');
+          } else {
+            // If no XSRF token, try to get it one more time with forced refresh
+            logger.warn('No XSRF token found in cookies, forcing refresh...');
+
+            // Clear existing cookies to ensure we get a fresh token
+            document.cookie = "XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "laravel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await getAuthCsrfToken();
+
+            // Wait longer to ensure cookies are set
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Check again for the token
+            const refreshedCookies = document.cookie.split(';');
+            const refreshedToken = refreshedCookies
+              .find(cookie => cookie.trim().startsWith('XSRF-TOKEN='))
+              ?.split('=')[1];
+
+            if (refreshedToken) {
+              config.headers['X-XSRF-TOKEN'] = decodeURIComponent(refreshedToken);
+              logger.debug('Added refreshed CSRF token to request headers');
+            } else {
+              logger.error('Failed to obtain XSRF token after refresh attempt, request may fail');
+            }
           }
         } catch (error) {
           logger.error('Failed to get CSRF token for request:', error);
-          // Continue without token - the request may fail with 419
         }
       }
 
@@ -220,28 +301,87 @@ const createApiClient = (): AxiosInstance => {
 
   // Response interceptor
   instance.interceptors.response.use(
-    (response) => response,
+    (response) => {
+      // Clean up pending request tracking if this was a tracked request
+      if (response.config && typeof (response.config as ExtendedAxiosRequestConfig)._pendingRequestCleanup === 'function') {
+        (response.config as ExtendedAxiosRequestConfig)._pendingRequestCleanup?.();
+      }
+      return response;
+    },
     async (error: AxiosError) => {
+      // Clean up pending request tracking even on error
+      if (error.config && typeof (error.config as ExtendedAxiosRequestConfig)._pendingRequestCleanup === 'function') {
+        (error.config as ExtendedAxiosRequestConfig)._pendingRequestCleanup?.();
+      }
+
       // Handle CSRF token errors
-      if (error.response?.status === 419) {
-        logger.warn('CSRF token mismatch detected. Refreshing token...');
+      if (error.response?.status === 419 ||
+        (error.response?.status === 403 &&
+          typeof error.response?.data === 'object' &&
+          error.response?.data !== null &&
+          'message' in error.response.data &&
+          typeof error.response.data.message === 'string' &&
+          error.response.data.message.includes('CSRF'))) {
+        logger.warn('CSRF token mismatch detected. Refreshing token and retrying request...');
+        console.log('API Middleware: CSRF token mismatch detected, refreshing token...', {
+          status: error.response?.status,
+          url: error.config?.url,
+          data: error.response?.data
+        });
+
         try {
+          // Force a new token fetch by clearing any existing token tracking
+          document.cookie = "XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+          document.cookie = "laravel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+          // Wait a moment before requesting a new token
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Get a fresh token with our enhanced function
           await getAuthCsrfToken();
+
+          // Wait longer for cookie to be properly set
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Get the new token from cookies
+          const cookies = document.cookie.split(';');
+          const xsrfToken = cookies
+            .find(cookie => cookie.trim().startsWith('XSRF-TOKEN='))
+            ?.split('=')[1];
+
+          if (!xsrfToken) {
+            logger.error('Could not find XSRF token after refresh, giving up');
+            console.error('API Middleware: Could not find XSRF token after refresh, giving up');
+            return Promise.reject(error);
+          }
+
+          // Add the new token to the request headers
+          if (error.config && error.config.headers) {
+            error.config.headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfToken);
+            console.log('API Middleware: Added refreshed CSRF token to headers, retrying request');
+          }
+
           // Retry the request with the new CSRF token
+          logger.info('Retrying request with new CSRF token');
           return axios(error.config!);
         } catch (refreshError) {
           logger.error('Failed to refresh CSRF token:', refreshError);
+          console.error('API Middleware: Failed to refresh CSRF token:', refreshError);
+          return Promise.reject(error);
         }
       }
 
       // Handle authentication errors
       if (error.response?.status === 401) {
-        logger.warn('Authentication error detected. Redirecting to login page...');
+        logger.warn('Authentication error detected');
+        console.log('API Middleware: Authentication error detected', {
+          status: error.response?.status,
+          url: error.config?.url,
+          data: error.response?.data
+        });
 
-        // Only redirect if not already on an auth page
-        if (!window.location.pathname.startsWith('/auth/')) {
-          window.location.href = '/auth/login?redirect=' + encodeURIComponent(window.location.pathname);
-        }
+        // Don't automatically redirect - let the components handle auth redirects
+        // This prevents conflicts with the login/register flows
       }
 
       return Promise.reject(error);
@@ -263,7 +403,38 @@ export const api = {
    */
   get: async <T>(endpoint: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> => {
     try {
+      // Special handling for profile endpoint to prevent duplicate requests
+      if (endpoint === '/profile' || endpoint.endsWith('/profile') || endpoint.includes('/profile')) {
+        // Check if we've already made a request to this endpoint in last 5 seconds
+        const now = Date.now();
+        const lastProfileRequestTime = parseInt(sessionStorage.getItem('last_profile_request_time') || '0', 10);
+
+        if (now - lastProfileRequestTime < 5000) { // 5 seconds
+          logger.debug('Profile endpoint called too frequently, returning cached response');
+
+          // Try to use cached response
+          const cachedResponse = sessionStorage.getItem('profile_response');
+          if (cachedResponse) {
+            return JSON.parse(cachedResponse) as ApiResponse<T>;
+          }
+        }
+
+        // Update timestamp
+        sessionStorage.setItem('last_profile_request_time', now.toString());
+      }
+
       const response = await apiClient.get<T>(endpoint, config);
+
+      // Cache profile response
+      if ((endpoint === '/profile' || endpoint.endsWith('/profile') || endpoint.includes('/profile')) && response.status === 200) {
+        const responseToCache: ApiResponse<T> = handleSuccess(response);
+        try {
+          sessionStorage.setItem('profile_response', JSON.stringify(responseToCache));
+        } catch (e) {
+          // Ignore storage errors
+        }
+      }
+
       return handleSuccess(response);
     } catch (error) {
       return handleError<T>(error);

@@ -1,287 +1,242 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import {
-    getAuthUser,
-    setAuthUser,
-    isAuthenticated as checkIsAuthenticated,
-    getCsrfToken
-} from '@/utils/auth';
-import { authApi, User as AuthApiUser, ApiErrorResponse } from '@/services/api/features/auth';
-import logger from '@/utils/logger';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { AuthService } from '@/services/authService';
+import { authApi, User } from '@/services/api/features/auth';
 import { useNavigate } from 'react-router-dom';
-import { api } from '@/services/api/middleware/apiMiddleware';
+import { Permission, Role } from '@/types/permissions';
+import { getCsrfToken } from '@/utils/auth';
+import { useToast } from '@/components/ui/use-toast';
+import console from 'console';
 
-export interface User {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    avatar?: string;
-}
+const authService = AuthService.getInstance();
 
-// Convert auth API user to context user
-const convertUser = (apiUser: AuthApiUser): User => ({
-    id: apiUser.id,
-    name: apiUser.name || '',
-    email: apiUser.email,
-    role: apiUser.role || 'user',
-    avatar: apiUser.metadata?.avatar
-});
+const MAX_PROFILE_REQUESTS = 5;
+
+const convertUser = (apiUser: any): User => {
+    return {
+        id: apiUser.id,
+        name: apiUser.name || '',
+        email: apiUser.email,
+        role: apiUser.role,
+        avatar: apiUser.avatar,
+        permissions: apiUser.permissions,
+        last_login: apiUser.lastLoginAt,
+        created_at: apiUser.createdAt,
+        updated_at: apiUser.updatedAt
+    };
+};
 
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
     isLoading: boolean;
     error: string | null;
-    errors?: Record<string, string[]>;
+    errors: Record<string, string[]> | undefined;
     clearError: () => void;
     register: (name: string, email: string, password: string) => Promise<boolean>;
     login: (email: string, password: string) => Promise<boolean>;
     logout: () => void;
     refreshUser: () => Promise<void>;
     initializeAuth: () => Promise<void>;
+    hasPermission: (permission: Permission | Permission[]) => boolean;
+    hasRole: (role: Role | Role[]) => boolean;
 }
+
+
+
+const hasPreviousLoginEvidence = () => {
+    return localStorage.getItem('auth_user') !== null;
+};
+
+const checkIsAuthenticated = () => {
+    return authService.isAuthenticated();
+};
 
 const AuthContext = createContext<AuthContextType>({
     user: null,
     isAuthenticated: false,
-    isLoading: true,
+    isLoading: false,
     error: null,
     errors: undefined,
-    clearError: () => { },
-    register: async () => false,
-    login: async () => false,
-    logout: () => { },
-    refreshUser: async () => { },
-    initializeAuth: async () => { },
+    clearError: () => {},
+    register: () => Promise.resolve(false),
+    login: () => Promise.resolve(false),
+    logout: () => {},
+    refreshUser: () => Promise.resolve(),
+    initializeAuth: () => Promise.resolve(),
+    hasPermission: () => false,
+    hasRole: () => false
 });
-
-export const useAuth = () => useContext(AuthContext);
 
 interface AuthProviderProps {
     children: ReactNode;
 }
 
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+export const AuthProvider = ({ children }: AuthProviderProps) => {
+    const navigate = useNavigate();
     const [user, setUser] = useState<User | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [errors, setErrors] = useState<Record<string, string[]> | undefined>(undefined);
-    // Prevent duplicate API calls
     const [isProcessing, setIsProcessing] = useState(false);
-    const navigate = useNavigate();
+    const { toast } = useToast();
 
-    // Function to clear error state
-    const clearError = () => {
-        setError(null);
-        setErrors(undefined);
+    const profileRequestCount = useRef(0);
+    const lastProfileFetchTime = useRef<number | null>(null);
+    const cachedProfileResponse = useRef<any | null>(null);
+
+    const resetProfileRequestCount = () => {
+        profileRequestCount.current = 0;
     };
 
-    // Initialize app - fetch user data and ensure CSRF token
+    const incrementProfileRequestCount = () => {
+        profileRequestCount.current += 1;
+    };
+
+    const hasPreviousLoginEvidence = () => {
+        return !!authService.getUser();
+    };
+
+    const checkIsAuthenticated = async () => {
+        return await authService.isAuthenticated();
+    };
+
     const initializeAuth = async () => {
-        setIsLoading(true);
         try {
-            // Always fetch CSRF token first - critical for maintaining session
-            try {
-                await getCsrfToken();
-                logger.info('CSRF token refreshed during initialization');
-            } catch (csrfError) {
-                logger.error('Failed to refresh CSRF token, but continuing auth flow:', csrfError);
-                // Continue with auth flow even if CSRF fetch fails
+            resetProfileRequestCount();
+            if (!hasPreviousLoginEvidence()) return setIsLoading(false);
+            await getCsrfToken();
+            const isUserAuthenticated = await checkIsAuthenticated();
+            if (!isUserAuthenticated) return setIsLoading(false);
+            const response = await authApi.getCurrentUser();
+            if (response) {
+                setUser(convertUser(response));
+                lastProfileFetchTime.current = Date.now();
             }
-
-            try {
-                // Try to get the current user using cookie authentication
-                const response = await authApi.getCurrentUser();
-
-                if (response) {
-                    setUser(convertUser(response));
-                    // Only store user data in memory, not the token
-                    logger.info('User authenticated during initialization');
-                } else {
-                    // If the user is not authenticated, clear any stored data
-                    setUser(null);
-                    logger.warn('Empty response from getCurrentUser, clearing auth state');
-                }
-            } catch (userError) {
-                // Handle authentication errors specifically
-                if (userError?.status === 401) {
-                    setUser(null);
-                    logger.info('User not authenticated (401 response)');
-                } else {
-                    logger.error('Error fetching user data:', userError);
-                    // Don't clear token on network errors to prevent logout on temporary issues
-                }
-            }
-        } catch (err) {
-            console.error('Auth initialization error:', err);
-            setError('Failed to initialize authentication');
-            setUser(null);
+        } catch (error: any) {
+            setError(error.message || 'Failed to initialize authentication');
         } finally {
             setIsLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        initializeAuth();
-
-        // Set up an interval to refresh the CSRF token periodically
-        const csrfRefreshInterval = setInterval(async () => {
-            try {
-                await getCsrfToken();
-                logger.debug('CSRF token refreshed periodically');
-            } catch (error) {
-                logger.error('Failed to refresh CSRF token in interval:', error);
-            }
-        }, 30 * 60 * 1000); // Refresh every 30 minutes
-
-        return () => {
-            clearInterval(csrfRefreshInterval);
-        };
-    }, []);
-
-    // Debug user authentication status
-    useEffect(() => {
-        if (user) {
-            logger.info('User is authenticated:', { id: user.id, role: user.role });
-        } else if (!isLoading) {
-            logger.info('User is not authenticated');
-        }
-    }, [user, isLoading]);
-
-    const refreshUser = async (): Promise<void> => {
-        try {
-            // Refresh CSRF token first
-            await getCsrfToken();
-
-            const userData = await authApi.getCurrentUser();
-            if (userData) {
-                const contextUser = convertUser(userData);
-                setUser(contextUser);
-                setAuthUser(userData);
-            } else {
-                throw new Error('Failed to get user data');
-            }
-        } catch (error) {
-            logger.error('Failed to refresh user data:', error);
-            // If we can't refresh the user data, force logout
-            logout();
-            throw error;
         }
     };
 
     const login = async (email: string, password: string): Promise<boolean> => {
-        // Prevent multiple simultaneous login attempts
-        if (isProcessing) {
-            logger.warn('Login operation already in progress');
-            return false;
-        }
-
-        setIsLoading(true);
-        setIsProcessing(true);
-        clearError();
-
         try {
-            // First ensure we have a CSRF token
-            await getCsrfToken();
-
-            const response = await authApi.login({ email, password });
-            if (response && response.status === 'success' && response.user) {
-                // Auth token is handled by the cookies now, we only need the user object
-                const contextUser = convertUser(response.user);
-                setUser(contextUser);
+            setIsProcessing(true);
+            const credentials = { email, password };
+            const response = await authApi.login(credentials);
+            console.log(response);
+            if (response.status === 'success') {
+                const user = convertUser(response.user);
+                setUser(user);
                 return true;
             }
 
-            return false;
-        } catch (error: any) {
-            if (error.status === 'error') {
-                const apiError = error as ApiErrorResponse;
-                setError(apiError.message);
-                setErrors(apiError.errors);
-                logger.error('Login error:', apiError);
-            } else {
-                const errorMessage = error?.message || 'Login failed. Please try again.';
-                setError(errorMessage);
-                logger.error('Login error:', error);
+            // Handle API error response
+            if (response.status === 'error') {
+                setErrors(response.errors);
+                throw new Error(response.message || 'Login failed');
             }
+
+            throw new Error('Login failed');
+        } catch (error: any) {
+            const errorMessage = error?.message || 'Login failed';
+            setError(errorMessage);
+            setErrors(error?.errors || { general: [errorMessage] });
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: errorMessage,
+            });
             return false;
         } finally {
-            setIsLoading(false);
             setIsProcessing(false);
         }
     };
 
-    const register = async (name: string, email: string, password: string): Promise<boolean> => {
-        // Prevent multiple simultaneous registration attempts
-        if (isProcessing) {
-            logger.warn('Registration operation already in progress');
-            return false;
-        }
-
-        setIsLoading(true);
-        setIsProcessing(true);
-        clearError();
-
+    const logout = async () => {
         try {
-            // First ensure we have a CSRF token
-            await getCsrfToken();
+            setIsProcessing(true);
+            await authApi.logout();
+            authService.clearAuth();
+            setUser(null);
+            navigate('/login');
+        } catch (error: any) {
+            setError(error.message || 'Logout failed');
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: error.message || 'Logout failed',
+            });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
 
-            logger.info('Starting user registration process');
+    const hasPermission = (permission: Permission | Permission[]): boolean => {
+        const currentUser = authService.getUser();
+        if (!currentUser) return false;
+        if (Array.isArray(permission)) {
+            return permission.some(p => currentUser.permissions?.includes(p));
+        }
+        return currentUser.permissions?.includes(permission) || false;
+    };
 
-            // Call the registration API once
+    const hasRole = (role: Role | Role[]): boolean => {
+        const currentUser = authService.getUser();
+        if (!currentUser) return false;
+        if (Array.isArray(role)) {
+            return role.some(r => currentUser.role === r);
+        }
+        return currentUser.role === role;
+    };
+
+    const register = async (name: string, email: string, password: string): Promise<boolean> => {
+        try {
+            setIsProcessing(true);
+            await authService.getCsrfToken();
             const response = await authApi.register({
                 name,
                 email,
                 password
             });
 
-            // Check if we have a valid response with user and token
-            if (response && response.status === 'success' && response.user) {
-                // Set the user state with the converted user from the response
-                const contextUser = convertUser(response.user);
-                setUser(contextUser);
-                logger.info('Registration successful, user set in context');
+            if (response.status === 'success') {
+                setUser(convertUser(response.user));
+                navigate('/dashboard');
                 return true;
-            } else {
-                logger.warn('Registration returned an unexpected response format', response);
-                return false;
             }
+
+            throw new Error(response.message || 'Registration failed');
         } catch (error: any) {
-            if (error.status === 'error') {
-                const apiError = error as ApiErrorResponse;
-                setError(apiError.message);
-                setErrors(apiError.errors);
-                logger.error('Registration error:', apiError);
-            } else {
-                // Extract the error message
-                let errorMessage = 'Registration failed. Please try again.';
-
-                if (error?.response?.data?.message) {
-                    errorMessage = error.response.data.message;
-                } else if (error?.message) {
-                    errorMessage = error.message;
-                }
-
-                setError(errorMessage);
-                logger.error('Registration error:', error);
-            }
+            setError(error.message || 'Registration failed');
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: error.message || 'Registration failed',
+            });
             return false;
         } finally {
-            setIsLoading(false);
             setIsProcessing(false);
         }
     };
 
-    const logout = () => {
-        // Clear user state first
-        setUser(null);
-
-        // Call logout API with CSRF protection
-        getCsrfToken()
-            .then(() => authApi.logout())
-            .catch(error => {
-                logger.error('Logout error:', error);
+    const refreshUser = async () => {
+        try {
+            setIsProcessing(true);
+            const response = await authApi.getCurrentUser();
+            if (response) {
+                setUser(convertUser(response));
+            }
+        } catch (error: any) {
+            setError(error.message || 'Failed to refresh user data');
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: error.message || 'Failed to refresh user data',
             });
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const value = {
@@ -290,19 +245,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isLoading,
         error,
         errors,
-        clearError,
+        clearError: () => setError(null),
         register,
         login,
         logout,
         refreshUser,
         initializeAuth,
+        hasPermission,
+        hasRole
     };
+
+    useEffect(() => {
+        initializeAuth();
+        const csrfRefreshInterval = setInterval(() => getCsrfToken(), 1800000);
+        return () => {
+            if (csrfRefreshInterval) {
+                clearInterval(csrfRefreshInterval);
+            }
+        };
+    }, []);
 
     return (
         <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );
+};
+
+export const useAuth = () => {
+    const context = useContext(AuthContext);
+    if (context === undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 };
 
 export default AuthProvider;

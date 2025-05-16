@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -25,6 +25,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role_id',
         'role',
         'is_active',
         'avatar',
@@ -66,7 +67,16 @@ class User extends Authenticatable
      */
     protected $appends = [
         'isAdmin',
+        'isSuperAdmin',
     ];
+
+    /**
+     * Get the user's role
+     */
+    public function roleModel(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
 
     /**
      * Get the user's activities
@@ -91,7 +101,23 @@ class User extends Authenticatable
      */
     public function getIsAdminAttribute(): bool
     {
+        if ($this->role_id) {
+            return $this->roleModel?->slug === 'admin';
+        }
         return $this->role === 'admin';
+    }
+
+    /**
+     * Check if the user has super admin privileges
+     *
+     * @return bool
+     */
+    public function getIsSuperAdminAttribute(): bool
+    {
+        if ($this->role_id) {
+            return $this->roleModel?->slug === 'super_admin';
+        }
+        return false;
     }
 
     /**
@@ -102,6 +128,21 @@ class User extends Authenticatable
      */
     public function hasRole(string|array $roles): bool
     {
+        if ($this->isSuperAdmin) {
+            return true;
+        }
+
+        if ($this->role_id && $this->roleModel) {
+            $roleSlug = $this->roleModel->slug;
+
+            if (is_string($roles)) {
+                return $roleSlug === $roles;
+            }
+
+            return in_array($roleSlug, $roles);
+        }
+
+        // Legacy role check
         if (is_string($roles)) {
             return $this->role === $roles;
         }
@@ -117,48 +158,23 @@ class User extends Authenticatable
      */
     public function hasPermission(string $permission): bool
     {
-        $permissionMap = [
-            'admin' => ['*'],
-            'editor' => [
-                'create_context_rule',
-                'edit_context_rule',
-                'delete_context_rule',
-                'create_knowledge_base',
-                'edit_knowledge_base',
-                'delete_knowledge_base',
-                'create_prompt_template',
-                'edit_prompt_template',
-                'delete_prompt_template',
-                'manage_chat',
-                'view_analytics',
-                'view_logs',
-            ],
-            'viewer' => [
-                'view_analytics',
-                'view_logs',
-                'view_context_rule',
-                'view_knowledge_base',
-                'view_prompt_template',
-            ],
-            'user' => [
-                'view_own_resources',
-                'edit_own_resources',
-                'manage_own_chat',
-            ],
-        ];
-
-        // Admin has all permissions
-        if ($this->role === 'admin') {
+        // Super admin has all permissions
+        if ($this->isSuperAdmin) {
             return true;
         }
 
-        $rolePermissions = $permissionMap[$this->role] ?? [];
-
-        // Check for wildcard
-        if (in_array('*', $rolePermissions)) {
-            return true;
+        // Use role model if available
+        if ($this->role_id && $this->roleModel) {
+            return $this->roleModel->hasPermission($permission);
         }
 
-        return in_array($permission, $rolePermissions);
+        // Legacy permission check - use the role string
+        return match($this->role) {
+            'admin' => true,
+            'editor' => in_array($permission, \App\Support\Permissions::EDITOR_PERMISSIONS),
+            'viewer' => in_array($permission, \App\Support\Permissions::VIEWER_PERMISSIONS),
+            'user' => in_array($permission, \App\Support\Permissions::USER_PERMISSIONS),
+            default => false,
+        };
     }
 }

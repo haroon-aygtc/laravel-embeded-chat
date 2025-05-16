@@ -33,7 +33,7 @@ return [
         'http://localhost:8081',
         'http://localhost:5173',
         'http://localhost:3000',
-        env('FRONTEND_URL', 'http://localhost:8080'),
+        env('FRONTEND_URL', 'http://localhost:3000'),
     ],
 
     'allowed_origins_patterns' => [],

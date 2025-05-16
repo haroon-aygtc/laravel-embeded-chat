@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\User;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,63 +20,23 @@ class RoleController extends Controller
      */
     public function index(): JsonResponse
     {
-        if (!Gate::allows('manage-users')) {
+        if (!Gate::allows('manage_users')) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized to view roles'
             ], 403);
         }
 
-        // Define the available roles with their permissions
-        $roles = [
-            [
-                'id' => 'admin',
-                'name' => 'Administrator',
-                'description' => 'Full access to all features and settings',
-                'permissions' => ['*'],
-            ],
-            [
-                'id' => 'editor',
-                'name' => 'Editor',
-                'description' => 'Can create and edit content, but cannot manage users',
-                'permissions' => [
-                    'create_context_rule',
-                    'edit_context_rule',
-                    'delete_context_rule',
-                    'create_knowledge_base',
-                    'edit_knowledge_base',
-                    'delete_knowledge_base',
-                    'create_prompt_template',
-                    'edit_prompt_template',
-                    'delete_prompt_template',
-                    'manage_chat',
-                    'view_analytics',
-                    'view_logs',
-                ],
-            ],
-            [
-                'id' => 'viewer',
-                'name' => 'Viewer',
-                'description' => 'Read-only access to analytics and content',
-                'permissions' => [
-                    'view_analytics',
-                    'view_logs',
-                    'view_context_rule',
-                    'view_knowledge_base',
-                    'view_prompt_template',
-                ],
-            ],
-            [
-                'id' => 'user',
-                'name' => 'User',
-                'description' => 'Standard user with limited permissions',
-                'permissions' => [
-                    'view_own_resources',
-                    'edit_own_resources',
-                    'manage_own_chat',
-                ],
-            ],
-        ];
+        // Get roles from the database
+        $roles = Role::all()->map(function ($role) {
+            return [
+                'id' => $role->id,
+                'name' => $role->name,
+                'slug' => $role->slug,
+                'description' => $role->description,
+                'permissions' => $role->permissions(),
+            ];
+        });
 
         return response()->json([
             'status' => 'success',
@@ -88,7 +49,7 @@ class RoleController extends Controller
      */
     public function update(Request $request, string $userId): JsonResponse
     {
-        if (!Gate::allows('manage-users')) {
+        if (!Gate::allows('manage_users')) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized to change user roles'
@@ -96,25 +57,27 @@ class RoleController extends Controller
         }
 
         $validated = $request->validate([
-            'role' => ['required', 'string', Rule::in(['admin', 'editor', 'viewer', 'user'])],
+            'role_id' => ['required', 'exists:roles,id'],
         ]);
 
         $user = User::findOrFail($userId);
+        $role = Role::findOrFail($validated['role_id']);
 
         // Protect against changing one's own role if admin
-        if ($user->id === Auth::id() && $user->role === 'admin' && $validated['role'] !== 'admin') {
+        if ($user->id === Auth::id() && $user->isAdmin && $role->slug !== 'admin' && $role->slug !== 'super_admin') {
             return response()->json([
                 'status' => 'error',
                 'message' => 'You cannot downgrade your own admin role'
             ], 403);
         }
 
-        $user->role = $validated['role'];
+        $user->role_id = $role->id;
+        $user->role = $role->slug; // For backward compatibility
         $user->save();
 
         return response()->json([
             'status' => 'success',
-            'message' => "User role updated to {$validated['role']}",
+            'message' => "User role updated to {$role->name}",
             'data' => $user
         ]);
     }
@@ -131,6 +94,22 @@ class RoleController extends Controller
             'status' => 'success',
             'data' => [
                 'hasRole' => $hasRole
+            ]
+        ]);
+    }
+
+    /**
+     * Check if a user has a specific permission
+     */
+    public function checkPermission(Request $request, string $permission): JsonResponse
+    {
+        $user = $request->user();
+        $hasPermission = $user->hasPermission($permission);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'hasPermission' => $hasPermission
             ]
         ]);
     }
@@ -158,6 +137,7 @@ class RoleController extends Controller
             'delete_prompt_template',
             'manage_chat',
             'manage_users',
+            'view_users',
             'view_analytics',
             'view_logs',
             'view_own_resources',
@@ -175,7 +155,10 @@ class RoleController extends Controller
             'status' => 'success',
             'data' => [
                 'role' => $user->role,
+                'roleId' => $user->role_id,
+                'roleName' => $user->roleModel?->name,
                 'isAdmin' => $user->isAdmin,
+                'isSuperAdmin' => $user->isSuperAdmin,
                 'permissions' => $userPermissions
             ]
         ]);

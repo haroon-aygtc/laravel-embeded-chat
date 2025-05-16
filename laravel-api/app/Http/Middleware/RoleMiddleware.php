@@ -27,13 +27,13 @@ class RoleMiddleware
 
         $user = Auth::user();
 
-        // Admin role has all permissions
-        if ($user->role === 'admin') {
+        // Super Admin has all roles
+        if ($user->isSuperAdmin) {
             return $next($request);
         }
 
         // Check if user has one of the required roles
-        if (empty($roles) || in_array($user->role, $roles)) {
+        if (empty($roles) || $user->hasRole($roles)) {
             return $next($request);
         }
 

@@ -6,8 +6,11 @@
 
 import { api } from "@/services/api/middleware/apiMiddleware";
 import { authEndpoints } from "@/services/api/endpoints/authEndpoints";
-import { setAuthUser, getCsrfToken } from "@/utils/auth";
+import { AuthService } from '@/services/authService';
 import logger from "@/utils/logger";
+import { Permission, Role, rolePermissions } from '@/types/permissions';
+
+const authService = AuthService.getInstance();
 
 // Flag to prevent duplicate register calls
 let isRegisterInProgress = false;
@@ -28,21 +31,21 @@ export interface User {
   id: string;
   email: string;
   name?: string;
-  role: string;
-  isActive: boolean;
-  metadata?: Record<string, any>;
-  createdAt: string;
-  updatedAt: string;
+  role: Role;
+  avatar?: string;
+  permissions?: Permission[];
+  last_login?: string;
+  created_at: string;
+  updated_at: string;
   emailVerified?: boolean;
-  lastLoginAt?: string;
 }
 
 export interface AuthResponse {
   status: 'success' | 'error';
   message: string;
   user: User;
-  access_token: string;
-  token_type: string;
+  access_token?: string;
+  token_type?: string;
   expiresAt?: string;
   errors?: Record<string, string[]>;
 }
@@ -79,32 +82,44 @@ export const authApi = {
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     try {
       // Ensure we have CSRF token before login
-      await getCsrfToken();
-
+      await authService.getCsrfToken();
+      
       const response = await api.post<AuthResponse>(authEndpoints.login, credentials);
-
-      // Check for successful response
-      if (response.success && response.data?.user) {
-        // Store user data in memory, token will be managed by HTTP-only cookies
-        setAuthUser(response.data.user);
-        logger.info('Login successful');
-      } else {
-        logger.warn('Login response missing user data:', response.data);
+      const responseData = response.data;
+      
+      if (responseData?.status === 'success') {
+        const convertedUser = convertUser(responseData.user);
+        authService.setUser(convertedUser);
+        return {
+          status: 'success',
+          message: 'Login successful',
+          user: convertedUser,
+          access_token: responseData.access_token,
+          token_type: responseData.token_type,
+          expiresAt: responseData.expiresAt
+        };
       }
 
-      return response.data;
+      throw new Error(responseData?.message || 'Login failed');
     } catch (error: any) {
-      logger.error('Login failed:', error);
+      logger.error('Login error:', error);
+      
+      // Handle API error response
+      if (error.response?.data) {
+        const apiError = error.response.data;
+        throw {
+          status: 'error',
+          message: apiError.message || 'Login failed',
+          errors: apiError.errors || { general: [apiError.message || 'Login failed'] }
+        };
+      }
 
-      // Format error response
-      const errorMessage = error.error?.message || 'Failed to login. Please try again.';
-      const errorResponse: ApiErrorResponse = {
+      // Handle network errors
+      throw {
         status: 'error',
-        message: errorMessage,
-        errors: error.error?.details || { general: ['Failed to login. Please try again.'] }
+        message: error.message || 'Failed to login. Please try again.',
+        errors: { general: [error.message || 'Failed to login. Please try again.'] }
       };
-
-      throw errorResponse;
     }
   },
 
@@ -114,96 +129,106 @@ export const authApi = {
   register: async (data: RegisterData): Promise<AuthResponse> => {
     // Prevent duplicate register calls
     if (isRegisterInProgress) {
-      logger.warn('Registration request already in progress');
-      throw {
-        status: 'error',
-        message: 'Registration is already in progress. Please wait.',
-        errors: { general: ['Registration is already in progress. Please wait.'] }
-      };
+      throw new Error('Registration is already in progress');
     }
 
+    isRegisterInProgress = true;
     try {
-      isRegisterInProgress = true;
-
-      // Ensure we have CSRF token before registration
-      await getCsrfToken();
-
-      // Make registration request
-      logger.info('Sending registration request');
+      await authService.getCsrfToken();
       const response = await api.post<AuthResponse>(authEndpoints.register, data);
+      const { data: responseData } = response;
 
-      // Process successful response
-      if (response.success && response.data?.user) {
-        logger.info('Registration successful, storing user data');
-
-        // Store the user data
-        if (response.data.user) {
-          setAuthUser(response.data.user);
-        }
-      } else {
-        logger.warn('Registration response missing user data:', response.data);
+      if (responseData.status === 'success') {
+        authService.setUser(convertUser(responseData.user));
       }
 
-      return response.data;
+      return responseData;
     } catch (error: any) {
       logger.error('Registration failed:', error);
-
-      // Format error response
-      const errorMessage = error.error?.message || 'Failed to register. Please try again.';
-      const errorResponse: ApiErrorResponse = {
-        status: 'error',
-        message: errorMessage,
-        errors: error.error?.details || { general: ['Failed to register. Please try again.'] }
-      };
-
-      throw errorResponse;
+      throw error;
     } finally {
-      // Always reset the flag
-      setTimeout(() => {
-        isRegisterInProgress = false;
-        logger.info('Registration flag reset after timeout');
-      }, 2000); // Add a delay before allowing new register attempts
+      isRegisterInProgress = false;
     }
   },
 
   /**
    * Logout the current user
    */
-  logout: async (): Promise<void> => {
+  async logout(): Promise<void> {
     try {
       // Ensure CSRF token before logout
-      await getCsrfToken();
+      await authService.getCsrfToken();
 
-      // Backend will invalidate the session and clear cookies
+      // Call the logout endpoint
       await api.post<void>(authEndpoints.logout);
-      logger.info('Logout API call successful');
+
+      // Clear auth data
+      authService.clearAuth();
     } catch (error) {
       logger.error('Logout failed:', error);
+      // Still remove auth data even if the API call fails
+      authService.clearAuth();
     }
   },
 
   /**
    * Get current user data
    */
-  getCurrentUser: async (): Promise<User> => {
+  async getCurrentUser(): Promise<User> {
     try {
-      // Ensure we have CSRF token before getting current user
-      await getCsrfToken();
+      // Protection against multiple simultaneous requests
+      if (authService.isProfileRequestInProgress()) {
+        const cachedUser = authService.getUser();
+        if (cachedUser) return convertUser(cachedUser);
+        throw new Error('Profile request already in progress');
+      }
 
-      const response = await api.get<User>(authEndpoints.me);
-      if (!response.success || !response.data) {
-        logger.warn('Failed to get current user: No data returned from API');
-        throw new Error('Failed to get current user');
+      // Hard limit on requests per page load
+      const profileRequestCount = authService.getProfileRequestCount();
+      if (profileRequestCount >= 5) {
+        const cachedUser = authService.getUser();
+        if (cachedUser) return convertUser(cachedUser);
+        throw new Error('Too many profile requests');
       }
-      return response.data;
-    } catch (error: any) {
-      logger.error('Error getting current user:', error);
-      // If the error is a 401 Unauthorized, it's expected for non-logged in users
-      if (error.status === 401) {
-        logger.info('User not authenticated, as expected');
-      } else {
-        logger.error('Unexpected error fetching current user:', error);
+
+      // Rate limiting based on time
+      if (authService.wasProfileFetchedRecently()) {
+        const cachedUser = authService.getUser();
+        if (cachedUser) return convertUser(cachedUser);
       }
+
+      // Check session-level cache
+      const cachedProfileResponse = authService.getCachedProfileResponse();
+      if (cachedProfileResponse) {
+        return cachedProfileResponse.data;
+      }
+
+      // Set flag to prevent concurrent requests
+      authService.setProfileRequestFlag();
+      authService.incrementProfileRequestCount();
+
+      try {
+        // Get fresh user data
+        const response = await api.get<User>(authEndpoints.me);
+
+        if (response.data) {
+          // Update cache
+          authService.setUser(convertUser(response.data));
+          authService.cacheProfileResponse(response);
+          authService.markProfileFetched();
+          return response.data;
+        }
+
+        throw new Error('Failed to fetch user profile');
+      } finally {
+        // Always clear the flag
+        authService.clearProfileRequestFlag();
+      }
+    } catch (error) {
+      // Fall back to stored user if available
+      const storedUser = authService.getUser();
+      if (storedUser) return storedUser;
+
       throw error;
     }
   },
@@ -211,114 +236,230 @@ export const authApi = {
   /**
    * Update the current user's profile
    */
-  updateProfile: async (data: Partial<User>): Promise<User> => {
-    // Ensure CSRF token before updating profile
-    await getCsrfToken();
+  async updateProfile(data: Partial<User>): Promise<User> {
+    try {
+      const user = authService.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-    const response = await api.put<User>("/auth/profile", data);
-    if (!response.success || !response.data) {
-      throw new Error('Failed to update profile');
+      await authService.getCsrfToken();
+      const response = await api.patch<User>(authEndpoints.userProfile, data);
+      const updatedUser = response.data;
+
+      authService.setUser(convertUser(updatedUser));
+      return updatedUser;
+    } catch (error: any) {
+      logger.error('Profile update failed:', error);
+      throw error;
     }
-    return response.data;
   },
 
   /**
    * Request a password reset
    */
-  requestPasswordReset: async (email: string): Promise<void> => {
-    await api.post<void>(authEndpoints.forgotPassword, { email });
-  },
-
-  /**
-   * Reset password with token
-   */
-  resetPassword: async (token: string, password: string): Promise<void> => {
-    await api.post<void>(authEndpoints.resetPassword, { token, password });
+  async requestPasswordReset(email: string): Promise<void> {
+    try {
+      await authService.getCsrfToken();
+      await api.post<void>(authEndpoints.forgotPassword, { email });
+    } catch (error: any) {
+      logger.error('Password reset request failed:', error);
+      throw error;
+    }
   },
 
   /**
    * Change current user's password
    */
-  changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
-    // Ensure CSRF token before changing password
-    await getCsrfToken();
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    try {
+      const user = authService.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-    await api.post<void>(authEndpoints.changePassword, { currentPassword, newPassword });
+      await authService.getCsrfToken();
+      await api.post<void>(authEndpoints.changePassword, {
+        current_password: currentPassword,
+        password: newPassword
+      });
+    } catch (error: any) {
+      logger.error('Password change failed:', error);
+      throw error;
+    }
   },
 
   /**
    * Verify email with token
    */
-  verifyEmail: async (token: string): Promise<void> => {
-    await api.post<void>(authEndpoints.verifyEmail, { token });
+  async verifyEmail(token: string): Promise<void> {
+    try {
+      await authService.getCsrfToken();
+      await api.post<void>(authEndpoints.verifyEmail, { token });
+    } catch (error: any) {
+      logger.error('Email verification failed:', error);
+      throw error;
+    }
   },
 
   /**
    * Refresh the authentication token
    */
-  refreshToken: async (): Promise<{ token: string; expiresAt: string }> => {
-    // Ensure CSRF token before refreshing token
-    await getCsrfToken();
-
-    const response = await api.post<{ token: string; expiresAt: string }>(authEndpoints.refreshToken);
-
-    if (response.success && response.data) {
+  async refreshToken(): Promise<{ token: string; expiresAt: string }> {
+    try {
+      await authService.getCsrfToken();
+      const response = await api.post<{ token: string; expiresAt: string }>(authEndpoints.refreshToken);
       return response.data;
+    } catch (error: any) {
+      logger.error('Token refresh failed:', error);
+      throw error;
     }
-
-    throw new Error('Failed to refresh token');
   },
 
   /**
    * Get all active sessions for the current user
    */
-  getSessions: async (): Promise<any[]> => {
-    const response = await api.get<any[]>(authEndpoints.sessions);
-    if (!response.success || !response.data) {
-      throw new Error('Failed to get sessions');
+  async getSessions(): Promise<any[]> {
+    try {
+      const user = authService.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      await authService.getCsrfToken();
+      const response = await api.get<UserSession[]>(authEndpoints.sessions);
+      return response.data;
+    } catch (error: any) {
+      logger.error('Failed to get sessions:', error);
+      throw error;
     }
-    return response.data;
   },
 
   /**
    * Revoke a specific session
    */
-  revokeSession: async (sessionId: string): Promise<void> => {
-    await api.post<void>(authEndpoints.revokeSession(sessionId));
+  async revokeSession(sessionId: string): Promise<void> {
+    try {
+      await authService.getCsrfToken();
+      await api.delete(`${authEndpoints.sessions}/${sessionId}`);
+    } catch (error: any) {
+      logger.error('Failed to revoke session:', error);
+      throw error;
+    }
   },
 
   /**
-   * Check if user has a specific role
+   * Check if the current user has a specific role
    */
-  hasRole: async (role: string): Promise<boolean> => {
-    const response = await api.get<boolean>(`/auth/has-role/${role}`);
-    return response.data;
+  async hasRole(role: string | string[]): Promise<boolean> {
+    try {
+      const user = authService.getUser();
+      if (!user) {
+        return false;
+      }
+
+      if (Array.isArray(role)) {
+        return role.includes(user.role);
+      }
+
+      return user.role === role;
+    } catch (error: any) {
+      logger.error('Role check failed:', error);
+      return false;
+    }
   },
 
   /**
    * Change a user's role (admin only)
    */
-  changeUserRole: async (userId: string, role: string): Promise<User> => {
-    await getCsrfToken();
-    const response = await api.put<User>(`/auth/users/${userId}/role`, { role });
-    return response.data;
+  async changeUserRole(userId: string, role: string): Promise<User> {
+    try {
+      const user = authService.getUser();
+      if (!user || user.role !== 'admin') {
+        throw new Error('Unauthorized to change user roles');
+      }
+
+      await authService.getCsrfToken();
+      const response = await api.put<User>(`${authEndpoints.users}/${userId}/role`, { role });
+      return response.data;
+    } catch (error: any) {
+      logger.error('Failed to change user role:', error);
+      throw error;
+    }
   },
 
   /**
    * Get user by ID (admin only)
    */
-  getUserById: async (userId: string): Promise<User> => {
-    const response = await api.get<User>(`/auth/users/${userId}`);
-    return response.data;
+  async getUserById(userId: string): Promise<User> {
+    try {
+      const user = authService.getUser();
+      if (!user || user.role !== 'admin') {
+        throw new Error('Unauthorized to view user');
+      }
+
+      await authService.getCsrfToken();
+      const response = await api.get<User>(`${authEndpoints.users}/${userId}`);
+      return response.data;
+    } catch (error: any) {
+      logger.error('Failed to get user:', error);
+      throw error;
+    }
   },
 
   /**
    * Get all users (admin only)
    */
-  getAllUsers: async (page: number = 1, limit: number = 20): Promise<{ users: User[]; total: number }> => {
-    const response = await api.get<{ users: User[]; total: number }>(`/auth/users`, {
-      params: { page, limit },
-    });
-    return response.data;
+  async getAllUsers(page: number = 1, limit: number = 20): Promise<{ users: User[]; total: number }> {
+    try {
+      const user = authService.getUser();
+      if (!user || user.role !== 'admin') {
+        throw new Error('Unauthorized to view users');
+      }
+
+      await authService.getCsrfToken();
+      const response = await api.get<{ users: User[]; total: number }>(`${authEndpoints.users}?page=${page}&limit=${limit}`);
+      return response.data;
+    } catch (error: any) {
+      logger.error('Failed to get users:', error);
+      throw error;
+    }
   },
+
+  /**
+   * Check if the current user has a specific permission
+   */
+  async hasPermission(permission: Permission): Promise<boolean> {
+    try {
+      const user = authService.getUser();
+      if (!user) {
+        return false;
+      }
+
+      // Check if user has permission based on their role
+      const userRolePermissions = rolePermissions[user.role];
+      if (!userRolePermissions) {
+        return false;
+      }
+
+      return userRolePermissions.includes(permission);
+    } catch (error: any) {
+      logger.error('Permission check failed:', error);
+      return false;
+    }
+  }
 };
+function convertUser(data: Partial<User>): import("../../../types/user").User {
+  return {
+    id: data.id,
+    name: data.name || '',
+    email: data.email,
+    role: data.role,
+    avatar: data.avatar,
+    permissions: data.permissions,
+    last_login: data.last_login,
+    created_at: data.created_at,
+    updated_at: data.updated_at
+  };
+}
+

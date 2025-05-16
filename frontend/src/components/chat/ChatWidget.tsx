@@ -55,6 +55,7 @@ interface ChatWidgetProps {
   messages?: Message[];
   isLoading?: boolean;
   onSendMessage?: (message: string) => Promise<void>;
+  onTypingStatusChange?: (isTyping: boolean) => void;
 }
 
 function ChatWidget({

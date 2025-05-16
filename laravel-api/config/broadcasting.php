@@ -35,7 +35,7 @@ return [
             'secret' => env('REVERB_APP_SECRET', 'laravel-chat-secret'),
             'client_options' => [
                 'host' => env('REVERB_HOST', '127.0.0.1'),
-                'port' => env('REVERB_PORT', 3000),
+                'port' => env('REVERB_PORT', 6001),
                 'scheme' => env('REVERB_SCHEME', 'http'),
             ],
             'ping_interval' => env('REVERB_PING_INTERVAL', 60),

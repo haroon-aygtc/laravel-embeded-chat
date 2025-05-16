@@ -66,7 +66,7 @@ class AuthControllerTest extends TestCase
         $user = User::factory()->create();
         $token = $user->createToken('test-token')->plainTextToken;
 
-        $response = $this->getJson('/api/auth/profile', [
+        $response = $this->getJson('/api/profile', [
             'Authorization' => 'Bearer ' . $token,
         ]);
 

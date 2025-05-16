@@ -114,10 +114,7 @@ api.interceptors.response.use(
   async (error) => {
     // Handle session expiration
     if (error.response && error.response.status === 401) {
-      // Only redirect if not already on an auth page
-      if (!window.location.pathname.startsWith("/auth/")) {
-        window.location.href = "/auth/login?redirect=" + encodeURIComponent(window.location.pathname);
-      }
+      logger.warn('Authentication error detected');
     }
 
     // Handle CSRF token errors - but don't auto-refresh

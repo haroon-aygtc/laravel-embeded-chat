@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laravel Embedded Chat Widget | Documentation</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: #4f46e5;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            color: #4f46e5;
+        }
+
+        h3 {
+            font-size: 1.25rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+        }
+
+        code {
+            font-family: monospace;
+            background-color: #f3f4f6;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background-color: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+
+        .example {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .tip {
+            background-color: #f0fdf4;
+            border-left: 4px solid #10b981;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .warning {
+            background-color: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Laravel Embedded Chat Widget</h1>
+    <p>
+        This documentation helps you integrate the chat widget into any website.
+        The widget is designed to be lightweight, customizable, and easy to implement.
+    </p>
+
+    <h2>Quick Start</h2>
+    <p>
+        Add the following code to your website to integrate the chat widget:
+    </p>
+    <pre><code>&lt;script src="https://your-domain.com/embed.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  document.addEventListener('DOMContentLoaded', function() {
+    LaravelChat.init({
+      widgetId: 'your-widget-id',
+      position: 'bottom-right',
+      primaryColor: '#4f46e5'
+    });
+  });
+&lt;/script&gt;</code></pre>
+
+    <div class="tip">
+        <strong>Tip:</strong> Replace <code>your-widget-id</code> with the ID of your chat widget from the admin
+        dashboard.
+    </div>
+
+    <h2>Integration Methods</h2>
+    <p>
+        There are two ways to integrate the chat widget into your website:
+    </p>
+
+    <h3>1. Floating Widget</h3>
+    <p>
+        The floating widget appears as a chat button in the corner of your website. When clicked, it expands into a chat
+        window.
+    </p>
+    <pre><code>&lt;script src="https://your-domain.com/embed.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  document.addEventListener('DOMContentLoaded', function() {
+    LaravelChat.init({
+      widgetId: 'your-widget-id'
+    });
+  });
+&lt;/script&gt;</code></pre>
+
+    <h3>2. Embedded Widget</h3>
+    <p>
+        The embedded widget is placed within a specific container on your website.
+    </p>
+    <pre><code>&lt;script src="https://your-domain.com/embed.js"&gt;&lt;/script&gt;
+&lt;div id="chat-container" style="width: 100%; height: 600px;"&gt;&lt;/div&gt;
+&lt;script&gt;
+  document.addEventListener('DOMContentLoaded', function() {
+    LaravelChat.init({
+      widgetId: 'your-widget-id',
+      container: 'chat-container'
+    });
+  });
+&lt;/script&gt;</code></pre>
+
+    <h2>Configuration Options</h2>
+    <p>
+        The chat widget supports the following configuration options:
+    </p>
+    <pre><code>{
+  // Required
+  widgetId: 'your-widget-id',  // The ID of your widget from the admin dashboard
+  
+  // Optional
+  container: null,              // ID of the container for embedded mode
+  position: 'bottom-right',     // bottom-right | bottom-left | top-right | top-left
+  primaryColor: '#4f46e5',      // Primary color in hex format
+  autoOpen: false,              // Automatically open the widget when the page loads
+  buttonSize: '60px',           // Size of the chat button
+  widgetWidth: '380px',         // Width of the chat window
+  widgetHeight: '600px',        // Height of the chat window
+}</code></pre>
+
+    <h2>Customization Examples</h2>
+
+    <div class="example">
+        <h3>Example 1: Custom Colors and Position</h3>
+        <pre><code>LaravelChat.init({
+  widgetId: 'your-widget-id',
+  position: 'bottom-left',
+  primaryColor: '#10b981'  // Green color
+});</code></pre>
+    </div>
+
+    <div class="example">
+        <h3>Example 2: Auto-Open and Custom Size</h3>
+        <pre><code>LaravelChat.init({
+  widgetId: 'your-widget-id',
+  autoOpen: true,
+  buttonSize: '70px',
+  widgetWidth: '420px',
+  widgetHeight: '700px'
+});</code></pre>
+    </div>
+
+    <div class="example">
+        <h3>Example 3: Embedded in a Specific Container</h3>
+        <pre><code>&lt;div id="support-chat" style="width: 100%; height: 500px; border: 1px solid #e5e7eb; border-radius: 8px;"&gt;&lt;/div&gt;
+
+&lt;script&gt;
+  LaravelChat.init({
+    widgetId: 'your-widget-id',
+    container: 'support-chat'
+  });
+&lt;/script&gt;</code></pre>
+    </div>
+
+    <h2>API Reference</h2>
+
+    <h3>Methods</h3>
+    <p>
+        The chat widget exposes the following methods:
+    </p>
+    <pre><code>// Initialize the widget
+LaravelChat.init(options);
+
+// Manually open the chat widget
+LaravelChat.open();
+
+// Manually close the chat widget
+LaravelChat.close();
+
+// Destroy the widget (remove it from the page)
+LaravelChat.destroy();</code></pre>
+
+    <h2>Best Practices</h2>
+    <ul>
+        <li>Place the widget script at the end of your page or use the <code>DOMContentLoaded</code> event to ensure all
+            DOM elements are loaded before initializing.</li>
+        <li>Use a color that matches your website's branding for the primary color.</li>
+        <li>Consider using the auto-open feature for support pages where users are actively seeking assistance.</li>
+        <li>For mobile sites, you may want to use the bottom-right position as it's easier for thumb access.</li>
+    </ul>
+
+    <div class="warning">
+        <strong>Important:</strong> The chat widget loads resources from your server. Ensure your server can handle the
+        additional traffic and that the widget URL is correctly configured.
+    </div>
+
+    <h2>Troubleshooting</h2>
+    <p>
+        If you encounter issues with the chat widget, check the following:
+    </p>
+    <ul>
+        <li>Ensure you have the correct widget ID.</li>
+        <li>Check browser console for any JavaScript errors.</li>
+        <li>Verify that your website's domain is allowed in the widget settings.</li>
+        <li>If using CORS restrictions, ensure that your domain is properly configured in the widget settings.</li>
+    </ul>
+
+    <h2>Getting Help</h2>
+    <p>
+        If you need assistance, please contact our support team or refer to the full documentation on our website.
+    </p>
+</body>
+
+</html>

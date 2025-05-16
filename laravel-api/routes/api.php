@@ -37,7 +37,6 @@ Route::prefix('auth')->as('auth.')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
-        Route::get('/profile', [AuthController::class, 'profile']);
 
         // Simple auth check endpoint that just returns success if authenticated
         Route::get('/check', function () {
@@ -63,7 +62,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Profile module routes
     Route::prefix('profile')->as('profile.')->group(function () {
-        Route::patch('/', [ProfileController::class, 'updateProfile']);
+        Route::get('/', [AuthController::class, 'profile']);
+        Route::patch('/update-profile', [ProfileController::class, 'updateProfile']);
         Route::patch('/security', [ProfileController::class, 'updateSecurity']);
         Route::get('/sessions', [ProfileController::class, 'getSessions']);
         Route::delete('/sessions/{sessionId}', [ProfileController::class, 'revokeSession']);
@@ -229,6 +229,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [RoleController::class, 'index']);
         Route::get('/permissions', [RoleController::class, 'permissions']);
         Route::get('/check/{role}', [RoleController::class, 'check']);
+        Route::get('/check-permission/{permission}', [RoleController::class, 'checkPermission']);
         Route::put('/users/{userId}', [RoleController::class, 'update'])->middleware('permission:manage_users');
     });
 });
