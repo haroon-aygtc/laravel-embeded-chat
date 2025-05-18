@@ -7,6 +7,10 @@ export const env = {
     GEMINI_API_KEY: import.meta.env.GEMINI_API_KEY,
     GROK_API_KEY: import.meta.env.GROK_API_KEY,
 
-    WS_PORT: import.meta.env.VITE_WS_PORT || 8000,
-    WS_URL: import.meta.env.VITE_WS_URL || 'ws://localhost:8000',
+    WS_PORT: import.meta.env.VITE_WS_PORT || 9001,
+    WS_URL: import.meta.env.VITE_WS_URL || 'ws://localhost:9001',
+
+    API_WS_HOST: import.meta.env.VITE_API_WS_HOST || 'localhost',
+    API_WS_PORT: import.meta.env.VITE_API_WS_PORT || 9001,
+    API_WS_URL: import.meta.env.VITE_API_WS_URL || 'ws://localhost:9001',
 }; 

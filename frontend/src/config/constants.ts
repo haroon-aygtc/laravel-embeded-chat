@@ -22,21 +22,5 @@ export const TOKEN_EXPIRY_MARGIN = 300; // 5 minutes in seconds
 export const APP_NAME = 'The Last Lab';
 export const DEFAULT_PAGE_SIZE = 10;
 
-// Chat widget defaults
-export const DEFAULT_WIDGET_CONFIG = {
-    primaryColor: '#4f46e5',
-    secondaryColor: '#f3f4f6',
-    fontFamily: 'Inter',
-    borderRadius: 8,
-    position: 'bottom-right',
-    initialMessage: 'Hello! How can I help you today?',
-    placeholderText: 'Type your message here...',
-    showHeader: true,
-    showFooter: true,
-    allowAttachments: false,
-    allowEmoji: true,
-    initiallyOpen: false
-};
-
 // Log levels
 export const LOG_LEVEL = import.meta.env.VITE_NODE_ENV === 'development' ? 'debug' : 'error';

@@ -5,7 +5,7 @@ import FeaturesSection from "./sections/FeaturesSection";
 import EmbedOptionsSection from "./sections/EmbedOptionsSection";
 import CTASection from "./sections/CTASection";
 import Footer from "./layout/Footer";
-import ChatWidgetWithConfig from "./chat/ChatWidgetWithConfig";
+import ChatWidgetWithConfig from "@/components/chat/ChatWidgetWithConfig";
 import { widgetConfigService } from "@/services/widgetConfigService";
 
 interface WidgetConfig {
@@ -89,9 +89,9 @@ const Home = () => {
             titleText: widgetConfig.title,
             primaryColor: widgetConfig.primaryColor,
             position: widgetConfig.position,
-            initiallyOpen: widgetConfig.initiallyOpen
+            initialState: widgetConfig.initiallyOpen ? 'open' : 'closed'
           }}
-          previewMode={false}
+          embedded={true}
         />
       )}
     </div>

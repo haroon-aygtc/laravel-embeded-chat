@@ -48,6 +48,11 @@ export interface AuthResponse {
   token_type?: string;
   expiresAt?: string;
   errors?: Record<string, string[]>;
+  success?: boolean;
+  data?: {
+    user?: User;
+    access_token?: string;
+  };
 }
 
 export interface ApiErrorResponse {
@@ -81,44 +86,90 @@ export const authApi = {
    */
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     try {
-      // Ensure we have CSRF token before login
+      // Ensure CSRF token before login
       await authService.getCsrfToken();
-      
-      const response = await api.post<AuthResponse>(authEndpoints.login, credentials);
+
+      // Make the login request
+      const response = await api.post<any>(authEndpoints.login, credentials);
+
+      // Log the raw response for debugging
+      console.log('API raw response:', response);
+      console.log('API raw response data:', response.data);
+
+      // Get the response data
       const responseData = response.data;
-      
-      if (responseData?.status === 'success') {
-        const convertedUser = convertUser(responseData.user);
-        authService.setUser(convertedUser);
+
+      // Check if we have a proper response object
+      if (!responseData || typeof responseData !== 'object') {
+        throw new Error('Invalid response format from server');
+      }
+
+      // Check if the response indicates success (either by status field or success field)
+      const isSuccess =
+        (responseData.status === 'success') ||
+        (responseData.success === true) ||
+        (responseData.user && responseData.access_token);
+
+      // If the response is successful, return a standardized success response
+      if (isSuccess) {
+        // Extract user data
+        const userData = responseData.user;
+
+        if (!userData) {
+          throw new Error('Login successful but no user data returned');
+        }
+
+        // Convert the user data to our expected format
+        const user = convertUser(userData);
+
+        // Save the user data and token
+        authService.setUser(user);
+
+        if (responseData.access_token) {
+          authService.setToken(responseData.access_token, responseData.token_type || 'Bearer');
+        }
+
+        // Return a successful response
         return {
           status: 'success',
-          message: 'Login successful',
-          user: convertedUser,
+          message: responseData.message || 'Login successful',
+          user,
           access_token: responseData.access_token,
-          token_type: responseData.token_type,
+          token_type: responseData.token_type || 'Bearer',
           expiresAt: responseData.expiresAt
         };
       }
 
-      throw new Error(responseData?.message || 'Login failed');
+      // If the response indicates an error
+      return {
+        status: 'error',
+        message: responseData.message || 'Login failed',
+        user: null as any,
+        errors: responseData.errors
+      };
     } catch (error: any) {
+      // Log the error
       logger.error('Login error:', error);
-      
-      // Handle API error response
+
+      // If we have a response with error data
       if (error.response?.data) {
         const apiError = error.response.data;
-        throw {
+
+        // Return a standardized error response
+        return {
           status: 'error',
           message: apiError.message || 'Login failed',
+          user: null as any,
           errors: apiError.errors || { general: [apiError.message || 'Login failed'] }
         };
       }
 
-      // Handle network errors
-      throw {
+      // Generic error response
+      return {
         status: 'error',
-        message: error.message || 'Failed to login. Please try again.',
-        errors: { general: [error.message || 'Failed to login. Please try again.'] }
+        message: error.message || 'Login failed',
+        user: null as any,
+        errors: { general: [error.message || 'Login failed'] }
       };
     }
   },
@@ -308,8 +359,20 @@ export const authApi = {
   async refreshToken(): Promise<{ token: string; expiresAt: string }> {
     try {
       await authService.getCsrfToken();
-      const response = await api.post<{ token: string; expiresAt: string }>(authEndpoints.refreshToken);
-      return response.data;
+      const response = await api.post<any>(authEndpoints.refreshToken);
+
+      // Check if we have a successful response with token
+      if (response.success && response.data && response.data.token) {
+        // Cache the new token
+        authService.setToken(response.data.token, response.data.token_type || 'Bearer');
+
+        return {
+          token: response.data.token,
+          expiresAt: response.data.expiresAt
+        };
+      }
+
+      throw new Error('Token refresh failed: No token in response');
     } catch (error: any) {
       logger.error('Token refresh failed:', error);
       throw error;

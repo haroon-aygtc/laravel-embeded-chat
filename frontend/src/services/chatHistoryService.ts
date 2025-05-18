@@ -7,8 +7,6 @@ export interface ChatHistoryParams {
   userId: string;
   sessionId?: string;
   contextRuleId?: string;
-  page?: number;
-  pageSize?: number;
 }
 
 export interface MessageToStore {

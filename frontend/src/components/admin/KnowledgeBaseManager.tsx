@@ -44,8 +44,8 @@ import {
   Globe,
   Server,
 } from "lucide-react";
-import { KnowledgeBaseConfig } from "@/services/knowledgeBaseService";
 import { knowledgeBaseService } from "@/services/knowledgeBaseService";
+import type { KnowledgeBaseConfig } from "@/types/knowledgeBase";
 import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 

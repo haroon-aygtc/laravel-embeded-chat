@@ -44,6 +44,7 @@ class AuthService
                 'token_type' => 'Bearer',
                 'user' => $user,
             ])->cookie('laravel_session', Cookie::get('laravel_session'), 60 * 24 * 7, null, null, true, true);
+
         } catch (\Exception $e) {
             Log::error('Login error: ' . $e->getMessage(), ['exception' => $e]);
 
@@ -136,6 +137,45 @@ class AuthService
             return response()->json([
                 'status' => 'error',
                 'message' => 'An error occurred during logout.',
+                'errors' => [
+                    'system' => [$e->getMessage()]
+                ]
+            ], 500);
+        }
+    }
+
+    /**
+     * Refresh the user token.
+     */
+    public function refreshToken(?User $user): JsonResponse
+    {
+        try {
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthenticated.',
+                ], 401);
+            }
+
+            // Revoke all of the user's tokens
+            $user->tokens()->delete();
+
+            // Create a new token
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Token refreshed successfully',
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'expiresAt' => now()->addDays(7)->toDateTimeString()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Token refresh error: ' . $e->getMessage(), ['exception' => $e]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'An error occurred during token refresh.',
                 'errors' => [
                     'system' => [$e->getMessage()]
                 ]

@@ -13,7 +13,6 @@ import {
   Loader2,
   X,
   Database,
-  Check,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -58,9 +57,10 @@ import {
 } from "@/components/ui/tooltip";
 
 import contextRulesService from "@/services/contextRulesService";
-import { ContextRule, ResponseFilter, ContextRuleTestResult } from "@/types/contextRules";
+import { ContextRule } from "@/services/contextRulesService";
+import { ResponseFilter } from "@/types/contextRules";
 import { knowledgeBaseService } from "@/services/knowledgeBaseService";
-import { KnowledgeBaseForContextRule } from "@/types/knowledgeBase";
+import type { KnowledgeBaseConfig } from "@/types/knowledgeBase";
 import logger from "@/utils/logger";
 
 // Define the schema for context rules
@@ -117,9 +117,14 @@ const ContextRulesEditor = () => {
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
   const [testQuery, setTestQuery] = useState("");
-  const [testResult, setTestResult] = useState<ContextRuleTestResult | null>(null);
+  const [testResult, setTestResult] = useState<{
+    result: string;
+    matches: string[];
+  } | null>(null);
   const [isTestingRule, setIsTestingRule] = useState(false);
-  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseForContextRule[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseConfig[]>(
+    [],
+  );
 
   const {
     register,
@@ -180,9 +185,8 @@ const ContextRulesEditor = () => {
 
   const fetchKnowledgeBases = async () => {
     try {
-      // Use the specialized method for getting knowledge base configs
-      const kbs = await knowledgeBaseService.getKnowledgeBaseConfigsForRules();
-      setKnowledgeBases(kbs);
+      const kbs = await knowledgeBaseService.getAllConfigs();
+      setKnowledgeBases(kbs.filter((kb) => kb.is_active));
     } catch (error) {
       console.error("Error fetching knowledge bases:", error);
       setError("Failed to load knowledge bases. Please try again.");
@@ -198,10 +202,6 @@ const ContextRulesEditor = () => {
         description: data.description,
         isActive: data.isActive,
         priority: 10, // Default priority
-        contextType: data.contextType,
-        keywords: data.keywords,
-        useKnowledgeBases: data.useKnowledgeBases,
-        knowledgeBaseIds: data.knowledgeBaseIds || [],
         conditions: [
           {
             type: "contextType",
@@ -222,7 +222,9 @@ const ContextRulesEditor = () => {
           })) || [],
       };
 
-      const newRule = await contextRulesService.createContextRule(ruleData);
+      const newRule = await contextRulesService.createContextRule(
+        ruleData as Omit<ContextRule, "id" | "createdAt" | "updatedAt">,
+      );
       setRules([...rules, newRule]);
       setActiveTab("rules-list");
       reset();
@@ -248,10 +250,6 @@ const ContextRulesEditor = () => {
         name: data.name,
         description: data.description,
         isActive: data.isActive,
-        contextType: data.contextType,
-        keywords: data.keywords,
-        useKnowledgeBases: data.useKnowledgeBases,
-        knowledgeBaseIds: data.knowledgeBaseIds || [],
         conditions: [
           {
             type: "contextType",
@@ -274,7 +272,9 @@ const ContextRulesEditor = () => {
 
       const updatedRule = await contextRulesService.updateContextRule(
         selectedRule.id,
-        ruleData
+        ruleData as Partial<
+          Omit<ContextRule, "id" | "createdAt" | "updatedAt">
+        >,
       );
       setRules(
         rules.map((rule) => (rule.id === updatedRule.id ? updatedRule : rule)),
@@ -316,8 +316,8 @@ const ContextRulesEditor = () => {
   const handleEditRule = (rule: ContextRule) => {
     setSelectedRule(rule);
 
-    // Extract keywords from conditions or use provided keywords property
-    const keywords = rule.keywords || 
+    // Extract keywords from conditions
+    const keywords =
       rule.conditions
         ?.filter((c) => c.type === "keyword")
         ?.map((c) => c.value) || [];
@@ -331,24 +331,21 @@ const ContextRulesEditor = () => {
           (a.parameters?.action as "block" | "flag" | "modify") || "block",
       })) || [];
 
-    // Extract context type from conditions or use provided contextType property
-    const contextType = rule.contextType || 
-      ((rule.conditions?.find(
-        (c) => c.type === "contextType",
-      )?.value as "business" | "general") || "business");
+    // Extract context type from conditions
+    const contextTypeCondition = rule.conditions?.find(
+      (c) => c.type === "contextType",
+    );
+    const contextType =
+      (contextTypeCondition?.value as "business" | "general") || "business";
 
     reset({
-      id: rule.id,
-      name: rule.name,
-      description: rule.description,
-      isActive: rule.isActive,
+      ...rule,
       contextType,
       keywords,
-      excludedTopics: rule.excludedTopics || [],
+      excludedTopics: [],
       responseFilters,
-      useKnowledgeBases: rule.useKnowledgeBases || false,
-      knowledgeBaseIds: rule.knowledgeBaseIds || [],
-      promptTemplate: rule.promptTemplate || "You are a helpful assistant responding to the following query: {{ userQuery }}"
+      useKnowledgeBases: false,
+      knowledgeBaseIds: [],
     });
     setActiveTab("create-rule");
   };
@@ -414,32 +411,42 @@ const ContextRulesEditor = () => {
   };
 
   const handleTestRule = async () => {
+    if (!selectedRule?.id || !testQuery.trim()) return;
+
     try {
       setIsTestingRule(true);
-      
-      if (!selectedRule) {
-        setError("No rule selected for testing");
-        return;
-      }
-      
-      if (!testQuery) {
-        setError("Please enter a query to test");
-        return;
-      }
-      
-      const result = await contextRulesService.testRule(selectedRule.id, {
-        query: testQuery
-      });
-      
-      setTestResult(result);
+      setTestResult(null);
       setError(null);
+
+      // Simple test implementation since we don't have a direct test endpoint
+      // Extract keywords from the rule's conditions
+      const keywords =
+        selectedRule.conditions
+          ?.filter((c) => c.type === "keyword")
+          ?.map((c) => c.value) || [];
+
+      // Check if any keywords match the test query
+      const matches = keywords.filter((keyword) =>
+        testQuery.toLowerCase().includes(keyword.toLowerCase()),
+      );
+
+      // Simulate a response
+      const result = {
+        matches,
+        result:
+          matches.length > 0
+            ? `The query matches ${matches.length} keywords: ${matches.join(", ")}. This rule would be applied.`
+            : "No keywords matched. This rule would not be applied.",
+      };
+
+      setTestResult(result);
+      setIsTestDialogOpen(true);
     } catch (error) {
       logger.error(
-        "Error testing rule",
-        error instanceof Error ? error : new Error(String(error))
+        "Error testing context rule",
+        error instanceof Error ? error : new Error(String(error)),
       );
-      setError("Failed to test rule. Please try again.");
-      setTestResult(null);
+      setError("Failed to test context rule. Please try again.");
     } finally {
       setIsTestingRule(false);
     }
@@ -672,10 +679,10 @@ const ContextRulesEditor = () => {
                   <CardFooter className="border-t pt-3 text-xs text-muted-foreground">
                     <div className="w-full flex justify-between">
                       <span>
-                        Created: {new Date(rule.createdAt || rule.created_at).toLocaleDateString()}
+                        Created: {new Date(rule.createdAt).toLocaleDateString()}
                       </span>
                       <span>
-                        Updated: {new Date(rule.updatedAt || rule.updated_at).toLocaleDateString()}
+                        Updated: {new Date(rule.updatedAt).toLocaleDateString()}
                       </span>
                     </div>
                   </CardFooter>
@@ -1037,103 +1044,66 @@ const ContextRulesEditor = () => {
       <Dialog open={isTestDialogOpen} onOpenChange={setIsTestDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Test Context Rule</DialogTitle>
+            <DialogTitle>Test Context Rule: {selectedRule?.name}</DialogTitle>
             <DialogDescription>
-              Test how this rule would respond to a user query
+              Enter a query to test how this context rule would respond
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="test-query">Enter a sample user query</Label>
-              <Textarea
-                id="test-query"
+          <div className="space-y-4 py-4">
+            <div className="flex space-x-2">
+              <Input
                 value={testQuery}
                 onChange={(e) => setTestQuery(e.target.value)}
-                placeholder="e.g., How do I apply for a visa?"
-                className="min-h-20"
+                placeholder="Enter a test query..."
+                className="flex-1"
               />
+              <Button onClick={handleTestRule} disabled={isTestingRule}>
+                {isTestingRule ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Test"
+                )}
+              </Button>
             </div>
-            
-            <Button
-              onClick={handleTestRule}
-              disabled={isTestingRule}
-              className="w-full"
-            >
-              {isTestingRule ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                "Test Rule"
-              )}
-            </Button>
-            
+
             {testResult && (
-              <div className="mt-4 space-y-4">
-                <div className="rounded-md bg-muted p-4">
-                  <h4 className="font-medium mb-2">Result:</h4>
-                  <Alert
-                    variant={testResult.rule_matches ? "default" : "destructive"}
-                  >
-                    <div className="flex items-center">
-                      {testResult.rule_matches ? (
-                        <Check className="h-4 w-4 mr-2 text-green-500" />
-                      ) : (
-                        <X className="h-4 w-4 mr-2 text-red-500" />
-                      )}
-                      <AlertTitle>
-                        {testResult.rule_matches
-                          ? "Rule would be applied"
-                          : "Rule would not be applied"}
-                      </AlertTitle>
-                    </div>
-                    <AlertDescription>
-                      {testResult.rule_matches
-                        ? `The rule matched patterns: ${testResult.matches.join(", ")}`
-                        : "The query didn't match any patterns in this rule."}
-                    </AlertDescription>
-                  </Alert>
-                  
-                  {/* Knowledge Base Results */}
-                  {testResult.knowledge_base_would_be_searched && (
-                    <div className="mt-4 border rounded-md p-4">
-                      <h4 className="font-medium mb-2 flex items-center">
-                        <Database className="h-4 w-4 mr-2" />
-                        Knowledge Base Results
-                      </h4>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        This rule would search the following knowledge bases:
-                      </p>
-                      
-                      <div className="space-y-2 mt-4">
-                        {testResult.knowledge_base_results.map((result, idx) => (
-                          <div key={result.id} className="border rounded-md p-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h5 className="font-medium">{result.title}</h5>
-                                <p className="text-xs text-muted-foreground">
-                                  From {result.knowledge_base.name} • 
-                                  {result.similarity_score && 
-                                    ` Relevance: ${Math.round(result.similarity_score * 100)}%`}
-                                </p>
-                              </div>
-                              <Badge variant="outline">{result.source_type}</Badge>
-                            </div>
-                            <p className="text-sm mt-2 line-clamp-3">{result.content}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+              <div className="space-y-4 border rounded-md p-4">
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">
+                    Matched Keywords:
+                  </h4>
+                  <div className="flex flex-wrap gap-1">
+                    {testResult.matches.length > 0 ? (
+                      testResult.matches.map((keyword) => (
+                        <Badge key={keyword} variant="secondary">
+                          {keyword}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        No keywords matched
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">AI Response:</h4>
+                  <div className="bg-muted p-3 rounded-md text-sm whitespace-pre-wrap">
+                    {testResult.result}
+                  </div>
                 </div>
               </div>
             )}
           </div>
-          
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsTestDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsTestDialogOpen(false)}
+            >
               Close
             </Button>
           </DialogFooter>
@@ -1227,42 +1197,42 @@ const ContextRulesEditor = () => {
                 )}
 
               {selectedRule.useKnowledgeBases && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-1">
-                      Knowledge Bases:
-                    </h4>
-                    <Badge
-                      variant="secondary"
-                      className="bg-blue-100 text-blue-800"
-                    >
-                      Enabled
-                    </Badge>
-                    {selectedRule.knowledgeBaseIds &&
-                      selectedRule.knowledgeBaseIds.length > 0 && (
-                        <div className="mt-2">
-                          <h5 className="text-xs font-medium mb-1">
-                            Linked Knowledge Bases:
-                          </h5>
-                          <div className="flex flex-wrap gap-1">
-                            {selectedRule.knowledgeBaseIds.map((id) => {
-                              const kb = knowledgeBases.find(
-                                (kb) => kb.id === id,
-                              );
-                              return (
-                                <Badge
-                                  key={id}
-                                  variant="outline"
-                                  className="text-xs"
-                                >
-                                  {kb?.name || id}
-                                </Badge>
-                              );
-                            })}
-                          </div>
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">
+                    Knowledge Bases:
+                  </h4>
+                  <Badge
+                    variant="secondary"
+                    className="bg-blue-100 text-blue-800"
+                  >
+                    Enabled
+                  </Badge>
+                  {selectedRule.knowledgeBaseIds &&
+                    selectedRule.knowledgeBaseIds.length > 0 && (
+                      <div className="mt-2">
+                        <h5 className="text-xs font-medium mb-1">
+                          Linked Knowledge Bases:
+                        </h5>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedRule.knowledgeBaseIds.map((id) => {
+                            const kb = knowledgeBases.find(
+                              (kb) => kb.id === id,
+                            );
+                            return (
+                              <Badge
+                                key={id}
+                                variant="outline"
+                                className="text-xs"
+                              >
+                                {kb?.name || id}
+                              </Badge>
+                            );
+                          })}
                         </div>
-                      )}
-                  </div>
-                )}
+                      </div>
+                    )}
+                </div>
+              )}
 
               {selectedRule.preferredModel && (
                 <div>

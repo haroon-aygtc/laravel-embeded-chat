@@ -3,7 +3,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ModerationRules from "@/components/admin/ModerationRules";
 import ModerationQueue from "@/components/admin/ModerationQueue";
 import AdminPageHeader from "@/components/admin/common/AdminPageHeader";
-import { Shield } from "lucide-react";
 
 const ModerationPage: React.FC = () => {
   return (
@@ -11,7 +10,6 @@ const ModerationPage: React.FC = () => {
       <AdminPageHeader
         title="Content Moderation"
         description="Manage content moderation rules and review flagged content"
-        icon={<Shield className="h-6 w-6" />}
       />
 
       <Tabs defaultValue="rules" className="w-full">

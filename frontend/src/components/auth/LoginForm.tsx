@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import logger from '@/utils/logger';
 import { AuthService } from '@/services/authService';
-import { Mail, MessageSquare } from 'lucide-react';
+import { Mail, MessageSquare, Eye, EyeOff } from 'lucide-react';
 import { LockClosedIcon } from '@radix-ui/react-icons';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -15,6 +15,7 @@ import {
   FormControl,
   FormField,
   FormItem,
+  FormLabel,
   FormMessage
 } from "@/components/ui/form";
 import LoadingSpinner from "@/components/ui/loading-spinner";
@@ -36,7 +37,7 @@ const loginFormSchema = z.object({
 type LoginFormValues = z.infer<typeof loginFormSchema>;
 
 const LoginForm = () => {
-  const { login, isLoading, errors, clearError, user } = useAuth();
+  const { login, isLoading, errors, clearError } = useAuth();
   const navigate = useNavigate();
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
@@ -49,6 +50,7 @@ const LoginForm = () => {
   const isSubmittingRef = useRef(false);
   const [showFormErrors, setShowFormErrors] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
 
   // Update form errors when backend errors change
@@ -82,6 +84,7 @@ const LoginForm = () => {
       // Clear any previous errors
       clearError();
       form.clearErrors();
+      setError(null);
 
       // Show validation errors if any
       setShowFormErrors(true);
@@ -90,9 +93,15 @@ const LoginForm = () => {
       isSubmittingRef.current = true;
 
       console.log("Starting login process...");
-
       console.log("Attempting login with credentials...");
+
+      // Make login request
       const success = await login(values.email, values.password);
+      console.log("Login API response success flag:", success);
+
+      // Additional check - log the current user right after login attempt
+      const userAfterLogin = authService.getUser();
+      console.log("User after login attempt:", userAfterLogin);
 
       if (success) {
         // Reset form after successful login
@@ -104,48 +113,60 @@ const LoginForm = () => {
 
         // First check if user has admin role
         const currentUser = authService.getUser();
-        if (currentUser && currentUser.role === 'admin') {
-          navigate('/admin/dashboard', { replace: true });
-        } else {
-          navigate('/dashboard', { replace: true });
-        }
+        console.log("Current user after login:", currentUser);
 
+        // Show success toast
         toast({
           title: "Login successful",
           description: "Welcome back!",
           variant: "default",
           className: "bg-green-500 text-white",
         });
+
+        // Check if there's a redirect path stored in session storage
+        const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+
+        if (redirectPath) {
+          console.log("Redirecting to stored path:", redirectPath);
+          // Clear the stored path
+          sessionStorage.removeItem('redirectAfterLogin');
+          navigate(redirectPath, { replace: true });
+        } else if (currentUser && currentUser.role === 'admin') {
+          console.log("Redirecting to admin dashboard");
+          navigate('/admin/dashboard', { replace: true });
+        } else {
+          console.log("Redirecting to user dashboard");
+          navigate('/dashboard', { replace: true });
+        }
       } else {
-        // Handle login failure
-        const errorMessage = error ? error.toString() : "Please check your credentials and try again";
+        // Handle login failure - this will only execute if the login function returned false
+        console.log("Login failed in component");
+        const errorMessage = error || "Please check your credentials and try again";
+
         toast({
           title: "Login failed",
           description: errorMessage,
           variant: "destructive",
         });
+
         form.setError('root', {
           type: 'manual',
           message: errorMessage
         });
       }
-    } catch (err: any) {
-      logger.error("Login error:", err);
-      const errorMessage = err?.message || "An unexpected error occurred during login";
+    } catch (err) {
+      // Handle any unexpected errors in the component itself
+      console.error("Unexpected error during login:", err);
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+
       toast({
         title: "Login error",
         description: errorMessage,
         variant: "destructive",
       });
-      form.setError('root', {
-        type: 'manual',
-        message: errorMessage
-      });
     } finally {
-      // Reset submission flag with delay
-      setTimeout(() => {
-        isSubmittingRef.current = false;
-      }, 2000);
+      // Clear submission flag
+      isSubmittingRef.current = false;
     }
   };
 
@@ -167,58 +188,89 @@ const LoginForm = () => {
 
       {/* Right column - Login Form */}
       <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-md space-y-8 bg-white rounded-lg shadow-lg p-8">
-          <div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8">
+          <div className="mb-8">
+            <h2 className="text-center text-2xl md:text-3xl font-bold text-gray-900">
               Sign in to your account
             </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              Enter your credentials to access your dashboard
+            </p>
           </div>
+
           <Form {...form}>
-            <form className="mt-8 space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
-              <div className="rounded-md shadow-sm -space-y-px">
+            <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
+              <div className="space-y-4">
                 <FormField
                   control={form.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormControl>
-                        <Input
-                          placeholder="you@example.com"
-                          type="email"
-                          className="pl-10"
-                          {...field}
-                        />
-                      </FormControl>
-                      <div className="absolute left-3 top-3 text-gray-400">
-                        <Mail size={16} />
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-sm font-medium text-gray-700">
+                          Email address
+                        </FormLabel>
                       </div>
-                      <FormMessage />
+                      <div className="relative mt-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          <Mail size={16} />
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="you@example.com"
+                            type="email"
+                            className="pl-10 h-11 rounded-md border-gray-300 focus:border-primary focus:ring-primary"
+                            {...field}
+                          />
+                        </FormControl>
+                      </div>
+                      <FormMessage className="text-xs mt-1" />
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter your password"
-                          type="password"
-                          className="pl-10"
-                          {...field}
-                        />
-                      </FormControl>
-                      <div className="absolute left-3 top-3 text-gray-400">
-                        <LockClosedIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-sm font-medium text-gray-700">
+                          Password
+                        </FormLabel>
                       </div>
-                      <FormMessage />
+                      <div className="relative mt-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          <LockClosedIcon className="h-4 w-4" aria-hidden="true" />
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your password"
+                            type={showPassword ? "text" : "password"}
+                            className="pl-10 pr-10 h-11 rounded-md border-gray-300 focus:border-primary focus:ring-primary"
+                            {...field}
+                          />
+                        </FormControl>
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      <FormMessage className="text-xs mt-1" />
                     </FormItem>
                   )}
                 />
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mt-6">
                 <div className="flex items-center">
                   <input
                     id="remember-me"
@@ -226,27 +278,24 @@ const LoginForm = () => {
                     type="checkbox"
                     className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
                   />
-                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
                     Remember me
                   </label>
                 </div>
 
                 <div className="text-sm">
-                  <a href="/forgot-password" className="font-medium text-primary hover:text-primary-dark">
-                    Forgot your password?
+                  <a href="/forgot-password" className="font-medium text-primary hover:text-primary-dark transition-colors">
+                    Forgot password?
                   </a>
                 </div>
               </div>
 
-              <div>
+              <div className="mt-8">
                 <button
                   type="submit"
                   disabled={isSubmittingRef.current || isLoading}
-                  className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary shadow-sm"
                 >
-                  <span className="absolute left-0 inset-y-0 flex items-center pl-3">
-                    <LockClosedIcon className="h-5 w-5 text-primary-500 group-hover:text-primary-400" aria-hidden="true" />
-                  </span>
                   {isLoading ? (
                     <>
                       <LoadingSpinner className="h-5 w-5 mr-2" />
@@ -256,6 +305,13 @@ const LoginForm = () => {
                     <span>Sign in</span>
                   )}
                 </button>
+              </div>
+
+              <div className="mt-6 text-center text-sm">
+                <span className="text-gray-600">Don't have an account?</span>{" "}
+                <a href="/signup" className="font-medium text-primary hover:text-primary-dark transition-colors">
+                  Sign up
+                </a>
               </div>
             </form>
           </Form>

@@ -43,8 +43,8 @@ class KnowledgeBaseConfigController extends Controller
         }
 
         // Extract parameters with defaults
-        $page = $request->input('page', 1);
-        $perPage = $request->input('per_page', 15);
+        $page = (int)$request->input('page', 1);
+        $perPage = (int)$request->input('per_page', 15);
         $sortBy = $request->input('sort_by', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
 

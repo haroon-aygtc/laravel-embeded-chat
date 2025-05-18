@@ -37,6 +37,7 @@ Route::prefix('auth')->as('auth.')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
+        Route::post('/refresh-token', [AuthController::class, 'refreshToken']);
 
         // Simple auth check endpoint that just returns success if authenticated
         Route::get('/check', function () {
@@ -48,6 +49,8 @@ Route::prefix('auth')->as('auth.')->group(function () {
         });
     });
 });
+
+
 
 // Routes that require authentication
 Route::middleware('auth:sanctum')->group(function () {
@@ -222,6 +225,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/user/{userId}', [WidgetController::class, 'getUserWidgets']);
         Route::post('/{id}/validate-domain', [WidgetController::class, 'validateDomain']);
         Route::get('/default', [WidgetController::class, 'getDefaultWidget']);
+        Route::get('/config/user/{userId}', [WidgetController::class, 'getWidgetConfigByUser']);
     });
 
     // User role management
@@ -302,6 +306,18 @@ Route::prefix('public')->group(function () {
     Route::prefix('widgets')->group(function () {
         Route::get('/{id}/config', [PublicWidgetController::class, 'getConfig']);
         Route::post('/{id}/sessions', [PublicWidgetController::class, 'createChatSession']);
+
+        // Public route for default widget configuration
+        Route::get('/default-config', function() {
+            $widgetService = app(\App\Services\WidgetService::class);
+            $defaultWidget = $widgetService->getDefaultWidget();
+
+            return response()->json([
+                'success' => true,
+                'data' => $defaultWidget,
+                'message' => 'Default widget configuration retrieved'
+            ]);
+        });
     });
 
     // Chat functionality for embedded widgets
@@ -312,11 +328,12 @@ Route::prefix('public')->group(function () {
 });
 
 // WebSocket routes
-Route::middleware('auth:sanctum')->prefix('websocket')->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:60,1'])->prefix('websocket')->group(function () {
     Route::get('/auth', [WebSocketController::class, 'auth']);
 });
 
-Route::prefix('websocket')->group(function () {
+// Guest WebSocket authentication with strict rate limiting
+Route::middleware(['throttle:10,1'])->prefix('websocket')->group(function () {
     Route::post('/guest-auth', [WebSocketController::class, 'guestAuth']);
 });
 
@@ -333,20 +350,94 @@ Route::prefix('public/chat')->group(function () {
 
 /**
  * WebSocket Status Endpoint
- * Simple endpoint to check if WebSocket server is available
+ * Checks if the WebSocket server is available and running
  */
-Route::get('/websocket-status', function () {
-    // In production, you would do actual checks to verify WebSocket server status
-    // For now, just respond that it's not available to make the frontend fall back to polling
+Route::middleware(['throttle:30,1'])->get('/websocket-status', function () {
+    // Check if the WebSocket server is configured
+    $wsEnabled = config('broadcasting.default') === 'reverb';
+    $wsHost = config('reverb.server.reverb.host', '127.0.0.1');
+    $wsPort = config('reverb.server.reverb.port', 9001);
+    $available = false;
+    $status = 'unknown';
+    $error = null;
+
+    try {
+        if ($wsEnabled) {
+            // Try to connect to the WebSocket server to check if it's actually running
+            $socket = @fsockopen($wsHost, $wsPort, $errno, $errstr, 2);
+
+            if ($socket) {
+                $available = true;
+                $status = 'online';
+                fclose($socket);
+
+                // Log successful connection check
+                \Illuminate\Support\Facades\Log::info('WebSocket server status check: online', [
+                    'host' => $wsHost,
+                    'port' => $wsPort
+                ]);
+            } else {
+                $available = false;
+                $status = 'offline';
+                $error = "Cannot connect to WebSocket server: $errstr ($errno)";
+
+                // Log failed connection
+                \Illuminate\Support\Facades\Log::warning('WebSocket server status check: offline', [
+                    'host' => $wsHost,
+                    'port' => $wsPort,
+                    'error' => $error
+                ]);
+            }
+        } else {
+            $status = 'disabled';
+            $error = 'WebSocket broadcasting is not enabled in configuration';
+
+            // Log disabled status
+            \Illuminate\Support\Facades\Log::info('WebSocket server status check: disabled', [
+                'broadcasting_driver' => config('broadcasting.default')
+            ]);
+        }
+    } catch (\Exception $e) {
+        $available = false;
+        $status = 'error';
+        $error = $e->getMessage();
+
+        // Log exception
+        \Illuminate\Support\Facades\Log::error('WebSocket server status check error', [
+            'exception' => $e,
+            'host' => $wsHost,
+            'port' => $wsPort
+        ]);
+    }
 
     // Add cache headers to prevent frequent calls
     return response()->json([
-        'available' => false,
-        'message' => 'WebSocket server is temporarily unavailable, using polling fallback',
+        'available' => $available,
+        'status' => $status,
+        'message' => $available
+            ? 'WebSocket server is available and running'
+            : 'WebSocket server is unavailable, using polling fallback',
+        'error' => $error,
+        'host' => $wsHost,
+        'port' => $wsPort,
+        'secure' => request()->secure(),
         'cache_time' => now()->toIso8601String(),
-        'next_check' => now()->addMinutes(5)->toIso8601String(),
+        'next_check' => now()->addMinutes(2)->toIso8601String(),
     ])->withHeaders([
-        'Cache-Control' => 'public, max-age=300', // Cache for 5 minutes
-        'Expires' => now()->addMinutes(5)->toRfc7231String(),
+        'Cache-Control' => 'public, max-age=120', // Cache for 2 minutes
+        'Expires' => now()->addMinutes(2)->toRfc7231String(),
+    ]);
+});
+
+/**
+ * API Status Endpoint
+ * Simple endpoint to check if the API is working
+ */
+Route::get('/status', function () {
+    return response()->json([
+        'status' => 'ok',
+        'message' => 'API is working',
+        'timestamp' => now()->toIso8601String(),
+        'version' => '1.0.0',
     ]);
 });

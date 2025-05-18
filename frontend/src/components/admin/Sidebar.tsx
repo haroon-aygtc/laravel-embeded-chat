@@ -36,7 +36,7 @@ interface SidebarProps {
 
 const Sidebar = ({
   collapsed = false,
-  onToggleCollapse = () => {},
+  onToggleCollapse = () => { },
   userName = "Admin User",
   userEmail = "admin@example.com",
   userAvatar = "https://api.dicebear.com/7.x/avataaars/svg?seed=admin",
@@ -270,6 +270,14 @@ const Sidebar = ({
     navigate("/login");
   };
 
+  // For handling submenu clicks without navigating
+  const handleSubmenuToggle = (e: React.MouseEvent, itemId: string) => {
+    e.preventDefault();
+    if (!collapsed) {
+      toggleMenu(itemId);
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -329,42 +337,49 @@ const Sidebar = ({
             <li key={item.id}>
               {item.submenu ? (
                 <div>
-                  <Button
-                    variant="ghost"
-                    className={cn(
-                      "w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800",
-                      activeItem === item.id && "bg-slate-800 text-white",
-                      collapsed && "justify-center px-2",
-                    )}
-                    onClick={() => !collapsed && toggleMenu(item.id)}
-                  >
-                    <TooltipProvider delayDuration={300}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="flex items-center">
-                            {item.icon}
-                            {!collapsed && (
-                              <>
-                                <span className="ml-3 flex-1 text-left">
-                                  {item.label}
-                                </span>
-                                {expandedMenus[item.id] ? (
-                                  <ChevronDown size={16} />
-                                ) : (
-                                  <ChevronRight size={16} />
-                                )}
-                              </>
-                            )}
-                          </span>
-                        </TooltipTrigger>
-                        {collapsed && (
+                  {!collapsed ? (
+                    <Link
+                      to={item.path}
+                      className={cn(
+                        "flex w-full items-center justify-start px-3 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md",
+                        activeItem === item.id && "bg-slate-800 text-white",
+                      )}
+                      onClick={(e) => handleSubmenuToggle(e, item.id)}
+                    >
+                      <span className="flex items-center">
+                        {item.icon}
+                        <span className="ml-3 flex-1 text-left">
+                          {item.label}
+                        </span>
+                        {expandedMenus[item.id] ? (
+                          <ChevronDown size={16} />
+                        ) : (
+                          <ChevronRight size={16} />
+                        )}
+                      </span>
+                    </Link>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      className={cn(
+                        "w-full justify-center px-2 text-slate-300 hover:text-white hover:bg-slate-800",
+                        activeItem === item.id && "bg-slate-800 text-white",
+                      )}
+                    >
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="flex items-center">
+                              {item.icon}
+                            </span>
+                          </TooltipTrigger>
                           <TooltipContent side="right">
                             {item.label}
                           </TooltipContent>
-                        )}
-                      </Tooltip>
-                    </TooltipProvider>
-                  </Button>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </Button>
+                  )}
 
                   {!collapsed && expandedMenus[item.id] && (
                     <ul className="mt-1 pl-10 space-y-1">
@@ -375,11 +390,10 @@ const Sidebar = ({
                             className={cn(
                               "block py-2 px-3 text-sm rounded-md text-slate-300 hover:text-white hover:bg-slate-800",
                               activeItem === `${item.id}-${subItem.id}` &&
-                                "bg-slate-800 text-white",
+                              "bg-slate-800 text-white",
                             )}
                             onClick={() => {
                               setActiveItem(`${item.id}-${subItem.id}`);
-                              navigate(subItem.path);
                             }}
                           >
                             {subItem.label}
@@ -390,16 +404,15 @@ const Sidebar = ({
                   )}
                 </div>
               ) : (
-                <Button
-                  variant="ghost"
+                <Link
+                  to={item.path}
                   className={cn(
-                    "w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800",
+                    "flex w-full items-center justify-start px-3 py-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md",
                     activeItem === item.id && "bg-slate-800 text-white",
                     collapsed && "justify-center px-2",
                   )}
                   onClick={() => {
                     setActiveItem(item.id);
-                    navigate(item.path);
                   }}
                 >
                   <TooltipProvider delayDuration={300}>
@@ -419,7 +432,7 @@ const Sidebar = ({
                       )}
                     </Tooltip>
                   </TooltipProvider>
-                </Button>
+                </Link>
               )}
             </li>
           ))}

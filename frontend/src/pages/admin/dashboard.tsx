@@ -22,7 +22,6 @@ import {
   User,
 } from "lucide-react";
 
-import WidgetConfigurator from "@/components/admin/WidgetConfigurator";
 import ContextRulesEditor from "@/components/admin/ContextRulesEditor";
 import PromptTemplates from "@/components/admin/PromptTemplates";
 import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
@@ -33,36 +32,40 @@ import SystemSettings from "@/components/admin/SystemSettings";
 import UserManagement from "@/components/admin/user-management";
 import AIConfiguration from "@/components/admin/AIConfiguration";
 import { useAdmin } from "@/context/AdminContext";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 
 const Dashboard = () => {
-  const { activeSection, setActiveSection } = useAdmin();
+  const { activeSection, navigateToSection } = useAdmin();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
-  // Sync with URL if needed
+  // Check for tab parameter in URL
   useEffect(() => {
-    const path = location.pathname.split('/').pop();
-    if (path === 'dashboard') {
-      setActiveSection('overview');
+    const tabParam = searchParams.get('tab');
+    if (tabParam && tabParam !== activeSection) {
+      navigateToSection(tabParam);
     }
-  }, [location.pathname, setActiveSection]);
+  }, [searchParams, activeSection, navigateToSection]);
+
+  // Use the navigateToSection function for tab changes
+  const handleTabChange = (value: string) => {
+    navigateToSection(value);
+    // Update URL with tab parameter
+    navigate(`/admin/dashboard?tab=${value}`, { replace: true });
+  };
 
   return (
     <div className="w-full">
       <Tabs
         value={activeSection}
-        onValueChange={setActiveSection}
+        onValueChange={handleTabChange}
         className="w-full"
       >
         <TabsList className="flex flex-wrap mb-6 gap-2">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <LayoutDashboard className="h-4 w-4" />
             <span>Overview</span>
-          </TabsTrigger>
-          <TabsTrigger value="widget" className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            <span>Widget Config</span>
           </TabsTrigger>
           <TabsTrigger value="context" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
@@ -167,24 +170,24 @@ const Dashboard = () => {
               <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <button
                   className="h-24 flex flex-col items-center justify-center gap-2 border rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  onClick={() => setActiveSection("widget")}
-                >
-                  <Settings className="h-6 w-6" />
-                  <span>Configure Widget</span>
-                </button>
-                <button
-                  className="h-24 flex flex-col items-center justify-center gap-2 border rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  onClick={() => setActiveSection("context")}
+                  onClick={() => navigateToSection("context")}
                 >
                   <MessageSquare className="h-6 w-6" />
                   <span>Edit Context Rules</span>
                 </button>
                 <button
                   className="h-24 flex flex-col items-center justify-center gap-2 border rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  onClick={() => setActiveSection("embed")}
+                  onClick={() => navigateToSection("embed")}
                 >
                   <Code className="h-6 w-6" />
                   <span>Get Embed Code</span>
+                </button>
+                <button
+                  className="h-24 flex flex-col items-center justify-center gap-2 border rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => navigateToSection("knowledge")}
+                >
+                  <Database className="h-6 w-6" />
+                  <span>Manage Knowledge Base</span>
                 </button>
               </CardContent>
             </Card>
@@ -214,10 +217,6 @@ const Dashboard = () => {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-
-        <TabsContent value="widget">
-          <WidgetConfigurator />
         </TabsContent>
 
         <TabsContent value="context">

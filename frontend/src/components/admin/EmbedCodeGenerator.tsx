@@ -1,386 +1,382 @@
-import React, { useState, useEffect } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import {
-  Copy,
-  Check,
-  Code2,
-  Globe,
-  AlertCircle,
-  RefreshCw,
-} from "lucide-react";
-import { ContextRule } from "@/types/contextRules";
-import { widgetApi } from "@/services/api/features/widget";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useToast } from "@/components/ui/use-toast";
-import { contextRulesApi } from "@/services/api/features/contextRulesfeatures";
+import React, { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useToast } from '@/components/ui/use-toast'
+import { widgetService } from '@/services/widgetService'
+import { EmbedType, Widget } from '@/types/widget'
+import { Clipboard, Code2, Globe } from 'lucide-react'
 
-interface EmbedCodeGeneratorProps {
-  widgetId?: string;
-  widgetColor?: string;
-  widgetPosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
-  widgetSize?: "small" | "medium" | "large";
-  userId?: string;
+const EmbedCodeGenerator = () => {
+    const { toast } = useToast()
+    const [widgets, setWidgets] = useState<Widget[]>([])
+    const [selectedWidget, setSelectedWidget] = useState<string>('')
+    const [selectedWidgetData, setSelectedWidgetData] = useState<Widget | null>(null)
+    const [embedType, setEmbedType] = useState<EmbedType>('script')
+    const [embedCode, setEmbedCode] = useState<string>('')
+    const [domain, setDomain] = useState<string>('')
+    const [isValidating, setIsValidating] = useState(false)
+    const [isDomainValid, setIsDomainValid] = useState<boolean | null>(null)
+    const [activeTab, setActiveTab] = useState('generate')
+
+    // Load widgets on component mount
+    useEffect(() => {
+        loadWidgets()
+    }, [])
+
+    // Generate code when widget or embed type changes
+    useEffect(() => {
+        if (selectedWidget && embedType) {
+            generateEmbedCode()
+        }
+    }, [selectedWidget, embedType])
+
+    // Load widget list from API
+    const loadWidgets = async () => {
+        try {
+            const response = await widgetService.getAllWidgets()
+            setWidgets(response.data)
+
+            // Select first widget if available
+            if (response.data.length > 0) {
+                setSelectedWidget(response.data[0].id)
+                setSelectedWidgetData(response.data[0])
+            }
+        } catch (error) {
+            console.error('Error loading widgets:', error)
+            toast({
+                title: 'Error',
+                description: 'Failed to load widgets. Please try again.',
+                variant: 'destructive'
+            })
+        }
+    }
+
+    // Get widget data by ID
+    const getWidgetDetails = async (id: string) => {
+        try {
+            const response = await widgetService.getWidgetById(id)
+            setSelectedWidgetData(response.data)
+        } catch (error) {
+            console.error('Error loading widget details:', error)
+            toast({
+                title: 'Error',
+                description: 'Failed to load widget details.',
+                variant: 'destructive'
+            })
+        }
+    }
+
+    // Handle widget selection change
+    const handleWidgetChange = (id: string) => {
+        setSelectedWidget(id)
+        getWidgetDetails(id)
+    }
+
+    // Generate embed code
+    const generateEmbedCode = async () => {
+        if (!selectedWidget) return
+
+        try {
+            const response = await widgetService.generateEmbedCode(selectedWidget, embedType)
+            // Make sure we're accessing the correct property in the response
+            if (response.data && response.data.embed_code) {
+                setEmbedCode(response.data.embed_code)
+            } else {
+                // Fallback if the embed_code property is missing
+                throw new Error('Invalid response format from server')
+            }
+        } catch (error) {
+            console.error('Error generating embed code:', error)
+
+            // Fallback to client-side generation if API fails
+            const domain = window.location.origin
+            let clientCode = ''
+
+            switch (embedType) {
+                case 'script':
+                    clientCode = `<script src="${domain}/widget.js" data-widget-id="${selectedWidget}"></script>`
+                    break
+                case 'iframe':
+                    clientCode = `<iframe src="${domain}/widget-frame/${selectedWidget}" width="100%" height="600px" frameborder="0"></iframe>`
+                    break
+                case 'webcomponent':
+                    clientCode = `<script src="${domain}/widget-component.js"></script>\n<chat-widget widget-id="${selectedWidget}"></chat-widget>`
+                    break
+            }
+
+            setEmbedCode(clientCode)
+        }
+    }
+
+    // Copy embed code to clipboard
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(embedCode).then(
+            () => {
+                toast({
+                    title: 'Copied!',
+                    description: 'Embed code copied to clipboard.',
+                })
+            },
+            (err) => {
+                console.error('Could not copy text: ', err)
+                toast({
+                    title: 'Error',
+                    description: 'Failed to copy to clipboard.',
+                    variant: 'destructive'
+                })
+            }
+        )
+    }
+
+    // Validate domain
+    const validateDomain = async () => {
+        if (!selectedWidget || !domain) return
+
+        setIsValidating(true)
+
+        try {
+            const response = await widgetService.validateDomain(selectedWidget, domain)
+            setIsDomainValid(response.data.isAllowed)
+
+            toast({
+                title: response.data.isAllowed ? 'Domain Allowed' : 'Domain Restricted',
+                description: response.data.isAllowed
+                    ? 'This domain is allowed to embed the widget.'
+                    : 'This domain is not in the allowed list.',
+                variant: response.data.isAllowed ? 'default' : 'destructive'
+            })
+        } catch (error) {
+            console.error('Error validating domain:', error)
+            setIsDomainValid(false)
+            toast({
+                title: 'Error',
+                description: 'Failed to validate domain.',
+                variant: 'destructive'
+            })
+        } finally {
+            setIsValidating(false)
+        }
+    }
+
+    // Add domain to allowed list
+    const addAllowedDomain = async () => {
+        if (!selectedWidget || !domain) return
+
+        try {
+            const response = await widgetService.addAllowedDomain(selectedWidget, domain)
+
+            if (response.status === 'success') {
+                toast({
+                    title: 'Domain Added',
+                    description: `${domain} has been added to the allowed domains.`
+                })
+
+                // Refresh widget details
+                getWidgetDetails(selectedWidget)
+                setIsDomainValid(true)
+            }
+        } catch (error) {
+            console.error('Error adding domain:', error)
+            toast({
+                title: 'Error',
+                description: 'Failed to add domain to allowed list.',
+                variant: 'destructive'
+            })
+        }
+    }
+
+    // Remove domain from allowed list
+    const removeAllowedDomain = async (domainToRemove: string) => {
+        if (!selectedWidget) return
+
+        try {
+            const response = await widgetService.removeAllowedDomain(selectedWidget, domainToRemove)
+
+            if (response.status === 'success') {
+                toast({
+                    title: 'Domain Removed',
+                    description: `${domainToRemove} has been removed from the allowed domains.`
+                })
+
+                // Refresh widget details
+                getWidgetDetails(selectedWidget)
+
+                // Update validation state if the current domain is the removed one
+                if (domain === domainToRemove) {
+                    setIsDomainValid(false)
+                }
+            }
+        } catch (error) {
+            console.error('Error removing domain:', error)
+            toast({
+                title: 'Error',
+                description: 'Failed to remove domain from allowed list.',
+                variant: 'destructive'
+            })
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Widget Embed Code Generator</CardTitle>
+                    <CardDescription>
+                        Generate embed code to add your AI widget to any website.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Tabs value={activeTab} onValueChange={setActiveTab}>
+                        <TabsList className="mb-4">
+                            <TabsTrigger value="generate">
+                                <Code2 className="mr-2 h-4 w-4" />
+                                Generate Code
+                            </TabsTrigger>
+                            <TabsTrigger value="domains">
+                                <Globe className="mr-2 h-4 w-4" />
+                                Manage Domains
+                            </TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="generate" className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-4">
+                                    <div>
+                                        <Label htmlFor="widget-select">Select Widget</Label>
+                                        <Select
+                                            value={selectedWidget}
+                                            onValueChange={handleWidgetChange}
+                                        >
+                                            <SelectTrigger id="widget-select">
+                                                <SelectValue placeholder="Select a widget" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {widgets.map(widget => (
+                                                    <SelectItem key={widget.id} value={widget.id}>
+                                                        {widget.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div>
+                                        <Label htmlFor="embed-type">Embed Type</Label>
+                                        <Select
+                                            value={embedType}
+                                            onValueChange={(value) => setEmbedType(value as EmbedType)}
+                                        >
+                                            <SelectTrigger id="embed-type">
+                                                <SelectValue placeholder="Choose embed type" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="script">JavaScript Snippet</SelectItem>
+                                                <SelectItem value="iframe">Iframe</SelectItem>
+                                                <SelectItem value="webcomponent">Web Component</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div>
+                                        <Button onClick={generateEmbedCode} className="mr-2">
+                                            Generate Code
+                                        </Button>
+                                        {embedCode && (
+                                            <Button onClick={copyToClipboard} variant="outline">
+                                                <Clipboard className="mr-2 h-4 w-4" />
+                                                Copy to Clipboard
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    {embedCode && (
+                                        <div className="space-y-2">
+                                            <Label>Embed Code</Label>
+                                            <div className="relative">
+                                                <pre className="bg-secondary p-4 rounded-md overflow-x-auto text-xs">
+                                                    {embedCode}
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </TabsContent>
+
+                        <TabsContent value="domains" className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-4">
+                                    <div>
+                                        <Label htmlFor="domain-input">Validate Domain</Label>
+                                        <div className="flex space-x-2">
+                                            <Input
+                                                id="domain-input"
+                                                placeholder="example.com"
+                                                value={domain}
+                                                onChange={(e) => setDomain(e.target.value)}
+                                            />
+                                            <Button
+                                                onClick={validateDomain}
+                                                disabled={!domain || isValidating}
+                                            >
+                                                Validate
+                                            </Button>
+                                        </div>
+                                        {isDomainValid !== null && (
+                                            <p className={`text-sm mt-2 ${isDomainValid ? 'text-green-600' : 'text-red-600'}`}>
+                                                {isDomainValid
+                                                    ? 'This domain is allowed to embed the widget.'
+                                                    : 'This domain is not in the allowed list.'}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {isDomainValid === false && (
+                                        <Button
+                                            onClick={addAllowedDomain}
+                                            disabled={!domain || isValidating}
+                                        >
+                                            Add to Allowed Domains
+                                        </Button>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <Label>Allowed Domains</Label>
+                                    {selectedWidgetData?.allowed_domains && selectedWidgetData.allowed_domains.length > 0 ? (
+                                        <ul className="mt-2 space-y-2">
+                                            {selectedWidgetData.allowed_domains.map(allowedDomain => (
+                                                <li key={allowedDomain} className="flex justify-between items-center p-2 bg-secondary rounded-md">
+                                                    <span>{allowedDomain}</span>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => removeAllowedDomain(allowedDomain)}
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground mt-2">
+                                            {selectedWidgetData ? 'No domains are currently allowed. Add domains to restrict widget usage.' : 'Select a widget to see allowed domains.'}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </TabsContent>
+                    </Tabs>
+                </CardContent>
+            </Card>
+        </div>
+    )
 }
 
-const EmbedCodeGenerator = ({
-  widgetId: initialWidgetId = "chat-widget-123",
-  widgetColor: initialWidgetColor = "#4f46e5",
-  widgetPosition: initialWidgetPosition = "bottom-right",
-  widgetSize: initialWidgetSize = "medium",
-  userId = "current-user", // In a real app, this would come from auth context
-}: EmbedCodeGeneratorProps) => {
-  const [copied, setCopied] = useState<string | null>(null);
-  const [contextRules, setContextRules] = useState<ContextRule[]>([]);
-  const [selectedContextRuleId, setSelectedContextRuleId] =
-    useState<string>("");
-  const [contextMode, setContextMode] = useState<"general" | "business">(
-    "general",
-  );
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [widgetId, setWidgetId] = useState(initialWidgetId);
-  const [widgetColor, setWidgetColor] = useState(initialWidgetColor);
-  const [widgetPosition, setWidgetPosition] = useState(initialWidgetPosition);
-  const [widgetSize, setWidgetSize] = useState(initialWidgetSize);
-  const [embedCode, setEmbedCode] = useState<string>("");
-  const [iframeEmbedCode, setIframeEmbedCode] = useState<string>("");
-  const { toast } = useToast();
-
-  // Fetch available context rules and widget configuration
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        // Fetch context rules
-        const rulesResponse = await contextRulesApi.getAllRules();
-        if (rulesResponse.success && rulesResponse.data) {
-          const activeRules = rulesResponse.data.filter((rule) => rule.isActive);
-          setContextRules(activeRules);
-          if (activeRules.length > 0) {
-            setSelectedContextRuleId(activeRules[0].id);
-          }
-        }
-
-        // Fetch widget embed code if widgetId is provided
-        if (widgetId && widgetId !== "chat-widget-123") {
-          const response = await widgetApi.getWidgetEmbedCode(widgetId);
-          if (response.success && response.data) {
-            setEmbedCode(response.data.code);
-
-            // Generate iframe code using our backend-provided widget configuration
-            const widgetResponse = await widgetApi.getWidgetById(widgetId);
-            if (widgetResponse.success && widgetResponse.data) {
-              const widget = widgetResponse.data;
-
-              // Update state with widget settings
-              if (widget.visualSettings && widget.visualSettings.primaryColor) {
-                setWidgetColor(widget.visualSettings.primaryColor);
-              }
-
-              if (widget.behavioralSettings && widget.behavioralSettings.initialState) {
-                setWidgetPosition(widget.behavioralSettings.initialState as "bottom-right" | "bottom-left" | "top-right" | "top-left");
-              }
-
-              // Generate iframe embed code
-              const baseUrl = window.location.origin;
-              const iframeCode = generateCustomIframeCode(baseUrl, widget);
-              setIframeEmbedCode(iframeCode);
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-        setError("Failed to load configuration data. Please try again.");
-        toast({
-          title: "Error",
-          description: "Failed to load configuration data",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [widgetId, toast]);
-
-  const baseUrl = window.location.origin;
-
-  // Generate a custom iframe code based on widget settings
-  const generateCustomIframeCode = (baseUrl: string, widget: any) => {
-    const width = widgetSize === "small" ? "300" : widgetSize === "medium" ? "380" : "450";
-    const position = widget.position || "bottom-right";
-
-    let positionCSS = "";
-    if (position.includes("bottom")) {
-      positionCSS += "bottom: 20px;";
-    } else {
-      positionCSS += "top: 20px;";
-    }
-
-    if (position.includes("right")) {
-      positionCSS += "right: 20px;";
-    } else {
-      positionCSS += "left: 20px;";
-    }
-
-    return `<iframe 
-  src="${baseUrl}/chat-embed?widgetId=${widget.id}" 
-  width="${width}" 
-  height="600" 
-  style="border: none; position: fixed; ${positionCSS} z-index: 9999; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); border-radius: 12px; background-color: white;"
-  title="Chat Widget"
-></iframe>`;
-  };
-
-  // Generate iframe embed code
-  const generateIframeCode = () => {
-    if (iframeEmbedCode) {
-      return iframeEmbedCode;
-    }
-
-    let url = `${baseUrl}/chat-embed`;
-    const params = new URLSearchParams();
-
-    params.append("widgetId", widgetId);
-    params.append("position", widgetPosition);
-    params.append("color", widgetColor);
-    params.append("size", widgetSize);
-    params.append("contextMode", contextMode);
-
-    if (contextMode === "business" && selectedContextRuleId) {
-      params.append("contextRuleId", selectedContextRuleId);
-    }
-
-    return `<iframe 
-  src="${url}?${params.toString()}" 
-  width="${widgetSize === "small" ? "300" : widgetSize === "medium" ? "380" : "450"}" 
-  height="600" 
-  style="border: none; position: fixed; ${widgetPosition.includes("bottom") ? "bottom: 20px;" : "top: 20px;"} ${widgetPosition.includes("right") ? "right: 20px;" : "left: 20px;"} z-index: 9999; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); border-radius: 12px; background-color: white;"
-  title="Chat Widget"
-></iframe>`;
-  };
-
-  // Generate Web Component (Shadow DOM) embed code
-  const generateWebComponentCode = () => {
-    if (embedCode) {
-      return embedCode;
-    }
-
-    let attributes = `widget-id="${widgetId}" position="${widgetPosition}" color="${widgetColor}" size="${widgetSize}" context-mode="${contextMode}"`;
-
-    if (contextMode === "business" && selectedContextRuleId) {
-      attributes += ` context-rule-id="${selectedContextRuleId}"`;
-    }
-
-    return `<script src="${baseUrl}/chat-widget.js"></script>
-<chat-widget ${attributes}></chat-widget>`;
-  };
-
-  // Handle copy button click
-  const handleCopy = (type: string, code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  return (
-    <div className="w-full p-6 bg-white rounded-lg shadow-sm border border-gray-200">
-      {isLoading && (
-        <div className="flex items-center justify-center p-4 mb-4 bg-blue-50 rounded-md">
-          <RefreshCw className="h-5 w-5 text-blue-500 animate-spin mr-2" />
-          <p className="text-blue-700">Loading configuration data...</p>
-        </div>
-      )}
-
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          Embed Code Generator
-        </h2>
-        <p className="text-gray-600">
-          Generate code to embed the chat widget on your website using either an
-          iframe or a Web Component.
-        </p>
-      </div>
-
-      {!initialWidgetId || initialWidgetId === "chat-widget-123" ? (
-        <div className="mb-6">
-          <h3 className="text-lg font-medium mb-2">Widget Settings</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Context Mode
-              </label>
-              <select
-                className="w-full p-2 border rounded-md"
-                value={contextMode}
-                onChange={(e) =>
-                  setContextMode(e.target.value as "general" | "business")
-                }
-              >
-                <option value="general">General</option>
-                <option value="business">Business</option>
-              </select>
-            </div>
-
-            {contextMode === "business" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Context Rule
-                </label>
-                <select
-                  className="w-full p-2 border rounded-md"
-                  value={selectedContextRuleId}
-                  onChange={(e) => setSelectedContextRuleId(e.target.value)}
-                  disabled={contextRules.length === 0}
-                >
-                  {contextRules.length === 0 ? (
-                    <option value="">No rules available</option>
-                  ) : (
-                    contextRules.map((rule) => (
-                      <option key={rule.id} value={rule.id}>
-                        {rule.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      <Tabs defaultValue="iframe" className="w-full">
-        <TabsList className="mb-4 w-full flex justify-start">
-          <TabsTrigger value="iframe" className="flex items-center gap-2">
-            <Code2 className="h-4 w-4" />
-            iframe Embed
-          </TabsTrigger>
-          <TabsTrigger
-            value="web-component"
-            className="flex items-center gap-2"
-          >
-            <Globe className="h-4 w-4" />
-            Web Component
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="iframe" className="space-y-4">
-          <div className="p-4 bg-gray-50 rounded-md">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-medium text-gray-700">
-                iframe Embed Code
-              </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleCopy("iframe", generateIframeCode())}
-                className="h-8"
-              >
-                {copied === "iframe" ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" /> Copy Code
-                  </>
-                )}
-              </Button>
-            </div>
-            <div className="relative">
-              <pre className="p-4 bg-gray-900 text-gray-100 rounded-md overflow-x-auto text-sm">
-                <code>{generateIframeCode()}</code>
-              </pre>
-            </div>
-          </div>
-
-          <div className="p-4 bg-blue-50 rounded-md border border-blue-100">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">
-              About iframe Embedding
-            </h4>
-            <p className="text-sm text-blue-700">
-              The iframe method provides complete isolation from your website's
-              styles and scripts. It's simple to implement but offers less
-              customization options.
-            </p>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="web-component" className="space-y-4">
-          <div className="p-4 bg-gray-50 rounded-md">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-medium text-gray-700">
-                Web Component Embed Code
-              </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  handleCopy("web-component", generateWebComponentCode())
-                }
-                className="h-8"
-              >
-                {copied === "web-component" ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" /> Copy Code
-                  </>
-                )}
-              </Button>
-            </div>
-            <div className="relative">
-              <pre className="p-4 bg-gray-900 text-gray-100 rounded-md overflow-x-auto text-sm">
-                <code>{generateWebComponentCode()}</code>
-              </pre>
-            </div>
-          </div>
-
-          <div className="p-4 bg-blue-50 rounded-md border border-blue-100">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">
-              About Web Component Embedding
-            </h4>
-            <p className="text-sm text-blue-700">
-              The Web Component method uses Shadow DOM to encapsulate styles and
-              scripts. It offers better integration with your website and more
-              customization options.
-            </p>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      <div className="mt-6 p-4 bg-amber-50 rounded-md border border-amber-100">
-        <h4 className="text-sm font-medium text-amber-800 mb-2">
-          Implementation Notes
-        </h4>
-        <ul className="list-disc pl-5 text-sm text-amber-700 space-y-1">
-          <li>
-            The chat widget will automatically initialize when the page loads.
-          </li>
-          <li>
-            You can customize the appearance and behavior through the admin
-            dashboard.
-          </li>
-          <li>
-            For advanced customization options, refer to the documentation.
-          </li>
-        </ul>
-      </div>
-    </div>
-  );
-};
-
-export default EmbedCodeGenerator;
+export default EmbedCodeGenerator 

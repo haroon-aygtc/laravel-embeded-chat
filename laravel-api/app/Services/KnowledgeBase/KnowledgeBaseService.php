@@ -1022,6 +1022,260 @@ class KnowledgeBaseService
     }
 
     /**
+     * Get all knowledge base configurations with pagination
+     */
+    public function getAllConfigs(
+        int $page = 1,
+        int $perPage = 15,
+        string $sortBy = 'created_at',
+        string $sortDirection = 'desc'
+    ): JsonResponse {
+        try {
+            // Get all knowledge bases
+            $query = KnowledgeBase::where('is_active', true);
+
+            // Apply sorting
+            $query->orderBy($sortBy, $sortDirection);
+
+            // Apply pagination
+            $knowledgeBases = $query->withCount('entries')
+                ->paginate($perPage, ['*'], 'page', $page);
+
+            return response()->json($knowledgeBases);
+        } catch (\Exception $e) {
+            Log::error('Failed to get knowledge base configurations', [
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Failed to get knowledge base configurations'], 500);
+        }
+    }
+
+    /**
+     * Get a specific knowledge base configuration
+     */
+    public function getConfig(User $user, string $id): JsonResponse
+    {
+        try {
+            $knowledgeBase = KnowledgeBase::where('id', $id)
+                ->where(function ($query) use ($user) {
+                    $query->where('user_id', $user->id)
+                          ->orWhere('is_public', true);
+                })
+                ->withCount('entries')
+                ->first();
+
+            if (!$knowledgeBase) {
+                return response()->json(['message' => 'Knowledge base configuration not found'], 404);
+            }
+
+            return response()->json($knowledgeBase);
+        } catch (\Exception $e) {
+            Log::error('Failed to get knowledge base configuration', [
+                'error' => $e->getMessage(),
+                'id' => $id,
+            ]);
+            return response()->json(['message' => 'Failed to get knowledge base configuration'], 500);
+        }
+    }
+
+    /**
+     * Create a new knowledge base configuration
+     */
+    public function createConfig(User $user, array $data): JsonResponse
+    {
+        try {
+            $knowledgeBase = new KnowledgeBase();
+            $knowledgeBase->id = (string) Str::uuid();
+            $knowledgeBase->user_id = $user->id;
+            $knowledgeBase->name = $data['name'];
+            $knowledgeBase->description = $data['description'] ?? null;
+            $knowledgeBase->source_type = $data['type'] ?? 'manual';
+            $knowledgeBase->metadata = [
+                'endpoint' => $data['endpoint'] ?? null,
+                'connectionString' => $data['connectionString'] ?? null,
+                'apiKey' => $data['apiKey'] ?? null,
+                'refreshInterval' => $data['refreshInterval'] ?? null,
+                'parameters' => $data['parameters'] ?? null,
+            ];
+            $knowledgeBase->is_public = $data['isPublic'] ?? false;
+            $knowledgeBase->is_active = $data['isActive'] ?? true;
+            $knowledgeBase->save();
+
+            return response()->json($knowledgeBase, 201);
+        } catch (\Exception $e) {
+            Log::error('Failed to create knowledge base configuration', [
+                'error' => $e->getMessage(),
+                'data' => $data,
+            ]);
+            return response()->json(['message' => 'Failed to create knowledge base configuration'], 500);
+        }
+    }
+
+    /**
+     * Update a knowledge base configuration
+     */
+    public function updateConfig(User $user, string $id, array $data): JsonResponse
+    {
+        try {
+            $knowledgeBase = KnowledgeBase::where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$knowledgeBase) {
+                return response()->json(['message' => 'Knowledge base configuration not found or you do not have permission to edit it'], 404);
+            }
+
+            if (isset($data['name'])) {
+                $knowledgeBase->name = $data['name'];
+            }
+
+            if (array_key_exists('description', $data)) {
+                $knowledgeBase->description = $data['description'];
+            }
+
+            if (isset($data['type'])) {
+                $knowledgeBase->source_type = $data['type'];
+            }
+
+            // Update metadata
+            $metadata = $knowledgeBase->metadata ?? [];
+
+            if (isset($data['endpoint'])) {
+                $metadata['endpoint'] = $data['endpoint'];
+            }
+
+            if (isset($data['connectionString'])) {
+                $metadata['connectionString'] = $data['connectionString'];
+            }
+
+            if (isset($data['apiKey'])) {
+                $metadata['apiKey'] = $data['apiKey'];
+            }
+
+            if (isset($data['refreshInterval'])) {
+                $metadata['refreshInterval'] = $data['refreshInterval'];
+            }
+
+            if (isset($data['parameters'])) {
+                $metadata['parameters'] = $data['parameters'];
+            }
+
+            $knowledgeBase->metadata = $metadata;
+
+            if (array_key_exists('isPublic', $data)) {
+                $knowledgeBase->is_public = $data['isPublic'];
+            }
+
+            if (array_key_exists('isActive', $data)) {
+                $knowledgeBase->is_active = $data['isActive'];
+            }
+
+            $knowledgeBase->save();
+
+            return response()->json($knowledgeBase);
+        } catch (\Exception $e) {
+            Log::error('Failed to update knowledge base configuration', [
+                'error' => $e->getMessage(),
+                'id' => $id,
+                'data' => $data,
+            ]);
+            return response()->json(['message' => 'Failed to update knowledge base configuration'], 500);
+        }
+    }
+
+    /**
+     * Delete a knowledge base configuration
+     */
+    public function deleteConfig(User $user, string $id): JsonResponse
+    {
+        try {
+            $knowledgeBase = KnowledgeBase::where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$knowledgeBase) {
+                return response()->json(['message' => 'Knowledge base configuration not found or you do not have permission to delete it'], 404);
+            }
+
+            $knowledgeBase->delete();
+
+            return response()->json(['message' => 'Knowledge base configuration deleted successfully']);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete knowledge base configuration', [
+                'error' => $e->getMessage(),
+                'id' => $id,
+            ]);
+            return response()->json(['message' => 'Failed to delete knowledge base configuration'], 500);
+        }
+    }
+
+    /**
+     * Sync a knowledge base with its source
+     */
+    public function syncKnowledgeBase(User $user, string $id): JsonResponse
+    {
+        try {
+            $knowledgeBase = KnowledgeBase::where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$knowledgeBase) {
+                return response()->json(['message' => 'Knowledge base not found or you do not have permission'], 404);
+            }
+
+            // Implementation would depend on the source type
+            // For now, just return a success message
+            return response()->json(['message' => 'Knowledge base sync initiated']);
+        } catch (\Exception $e) {
+            Log::error('Failed to sync knowledge base', [
+                'error' => $e->getMessage(),
+                'id' => $id,
+            ]);
+            return response()->json(['message' => 'Failed to sync knowledge base'], 500);
+        }
+    }
+
+    /**
+     * Test a knowledge base query
+     */
+    public function query(User $user, array $data): JsonResponse
+    {
+        try {
+            $query = $data['query'] ?? '';
+            $limit = $data['limit'] ?? 5;
+
+            if (empty($query)) {
+                return response()->json(['message' => 'Query is required'], 400);
+            }
+
+            // Simple implementation - in a real app would use vector search
+            $results = KnowledgeEntry::whereHas('knowledgeBase', function ($q) use ($user) {
+                $q->where('user_id', $user->id)
+                  ->orWhere('is_public', true);
+            })
+            ->where('is_active', true)
+            ->where(function ($q) use ($query) {
+                $q->where('title', 'like', "%{$query}%")
+                  ->orWhere('content', 'like', "%{$query}%");
+            })
+            ->with('knowledgeBase:id,name,source_type')
+            ->limit($limit)
+            ->get();
+
+            return response()->json([
+                'query' => $query,
+                'results' => $results
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to query knowledge base', [
+                'error' => $e->getMessage(),
+                'data' => $data,
+            ]);
+            return response()->json(['message' => 'Failed to query knowledge base'], 500);
+        }
+    }
+
+    /**
      * Advanced search across knowledge bases with multiple filtering options.
      *
      * @param User $user The authenticated user

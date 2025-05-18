@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
-import { MessageSquare, Lock, Mail, User, CheckCircle2, ArrowRight } from "lucide-react";
+import { MessageSquare, Lock, Mail, User, CheckCircle2, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { getCsrfToken } from "@/utils/auth";
 import logger from "@/utils/logger";
 
@@ -49,6 +49,8 @@ const SignupForm = () => {
   const isSubmittingRef = useRef(false);
   const { toast } = useToast();
   const [showFormErrors, setShowFormErrors] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Set up the form with React Hook Form
   const form = useForm<SignupFormValues>({
@@ -220,17 +222,19 @@ const SignupForm = () => {
       </div>
 
       {/* Right column - Form */}
-      <div className="w-full md:w-1/2 flex items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <div className="mb-8 text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Create your account</h2>
-            <p className="text-gray-600">
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8">
+          <div className="mb-8">
+            <h2 className="text-center text-2xl md:text-3xl font-bold text-gray-900">
+              Create your account
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
               Let's get started with your new account
             </p>
           </div>
 
           {error && (
-            <div className="mb-6 p-4 border border-red-200 bg-red-50 text-red-700 rounded-lg">
+            <div className="mb-6 p-4 border border-red-200 bg-red-50 text-red-700 rounded-lg text-sm">
               <p className="font-medium mb-1">Registration Error</p>
               <p>{error}</p>
               {errors && Object.keys(errors).length > 0 && (
@@ -245,160 +249,201 @@ const SignupForm = () => {
             </div>
           )}
 
-          {/* Password strength indicator */}
-          {form.watch("password") && (
-            <div className="mb-4 p-3 border border-gray-200 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-medium text-gray-800 mb-2">Password Requirements:</h4>
-              <ul className="space-y-1">
-                <li className={`text-sm flex items-center ${form.watch("password").length >= 8 ? 'text-green-600' : 'text-gray-500'}`}>
-                  <CheckCircle2 className={`h-4 w-4 mr-2 ${form.watch("password").length >= 8 ? 'text-green-600' : 'text-gray-400'}`} />
-                  At least 8 characters
-                </li>
-                <li className={`text-sm flex items-center ${/[A-Z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
-                  <CheckCircle2 className={`h-4 w-4 mr-2 ${/[A-Z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
-                  At least 1 uppercase letter
-                </li>
-                <li className={`text-sm flex items-center ${/[a-z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
-                  <CheckCircle2 className={`h-4 w-4 mr-2 ${/[a-z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
-                  At least 1 lowercase letter
-                </li>
-                <li className={`text-sm flex items-center ${/[0-9]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
-                  <CheckCircle2 className={`h-4 w-4 mr-2 ${/[0-9]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
-                  At least 1 number
-                </li>
-              </ul>
-            </div>
-          )}
-
           <Form {...form}>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                console.log("Form submitted");
                 form.handleSubmit(onSubmit)(e);
               }}
-              className="space-y-5"
+              className="space-y-6"
             >
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Full Name</FormLabel>
-                    <div className="relative">
-                      <FormControl>
-                        <Input
-                          placeholder="Enter your name"
-                          className="pl-10"
-                          {...field}
-                        />
-                      </FormControl>
-                      <div className="absolute left-3 top-3 text-gray-400">
-                        <User size={16} />
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-sm font-medium text-gray-700">
+                          Full Name
+                        </FormLabel>
                       </div>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Address</FormLabel>
-                    <div className="relative">
-                      <FormControl>
-                        <Input
-                          placeholder="you@example.com"
-                          type="email"
-                          className="pl-10"
-                          {...field}
-                        />
-                      </FormControl>
-                      <div className="absolute left-3 top-3 text-gray-400">
-                        <Mail size={16} />
+                      <div className="relative mt-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          <User size={16} />
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your name"
+                            className="pl-10 h-11 rounded-md border-gray-300 focus:border-primary focus:ring-primary"
+                            {...field}
+                          />
+                        </FormControl>
                       </div>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage className="text-xs mt-1" />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <div className="relative">
-                      <FormControl>
-                        <Input
-                          placeholder="Create a secure password"
-                          type="password"
-                          className="pl-10"
-                          {...field}
-                        />
-                      </FormControl>
-                      <div className="absolute left-3 top-3 text-gray-400">
-                        <Lock size={16} />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-sm font-medium text-gray-700">
+                          Email Address
+                        </FormLabel>
                       </div>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
-                    <div className="relative">
-                      <FormControl>
-                        <Input
-                          placeholder="Confirm your password"
-                          type="password"
-                          className="pl-10"
-                          {...field}
-                        />
-                      </FormControl>
-                      <div className="absolute left-3 top-3 text-gray-400">
-                        <Lock size={16} />
+                      <div className="relative mt-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          <Mail size={16} />
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="you@example.com"
+                            type="email"
+                            className="pl-10 h-11 rounded-md border-gray-300 focus:border-primary focus:ring-primary"
+                            {...field}
+                          />
+                        </FormControl>
                       </div>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage className="text-xs mt-1" />
+                    </FormItem>
+                  )}
+                />
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isLoading || isSubmittingRef.current}
-              >
-                {isLoading || isSubmittingRef.current ? (
-                  <span className="flex items-center">
-                    <span className="animate-spin mr-2">⊝</span>
-                    Creating Account...
-                  </span>
-                ) : (
-                  <span className="flex items-center">
-                    Create Account
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </span>
-                )}
-              </Button>
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-sm font-medium text-gray-700">
+                          Password
+                        </FormLabel>
+                      </div>
+                      <div className="relative mt-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          <Lock size={16} />
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="Create a secure password"
+                            type={showPassword ? "text" : "password"}
+                            className="pl-10 pr-10 h-11 rounded-md border-gray-300 focus:border-primary focus:ring-primary"
+                            {...field}
+                          />
+                        </FormControl>
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      <FormMessage className="text-xs mt-1" />
+                    </FormItem>
+                  )}
+                />
 
-              <div className="text-center mt-6">
-                <p className="text-sm text-gray-600">
-                  Already have an account?{" "}
-                  <Link to="/login" className="text-primary font-medium hover:underline">
-                    Log in
-                  </Link>
-                </p>
+                {/* Password strength indicator */}
+                {form.watch("password") && (
+                  <div className="p-3 border border-gray-200 bg-gray-50 rounded-md">
+                    <h4 className="text-xs font-medium text-gray-700 mb-2">Password Requirements:</h4>
+                    <ul className="space-y-1">
+                      <li className={`text-xs flex items-center ${form.watch("password").length >= 8 ? 'text-green-600' : 'text-gray-500'}`}>
+                        <CheckCircle2 className={`h-3.5 w-3.5 mr-2 ${form.watch("password").length >= 8 ? 'text-green-600' : 'text-gray-400'}`} />
+                        At least 8 characters
+                      </li>
+                      <li className={`text-xs flex items-center ${/[A-Z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
+                        <CheckCircle2 className={`h-3.5 w-3.5 mr-2 ${/[A-Z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
+                        At least 1 uppercase letter
+                      </li>
+                      <li className={`text-xs flex items-center ${/[a-z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
+                        <CheckCircle2 className={`h-3.5 w-3.5 mr-2 ${/[a-z]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
+                        At least 1 lowercase letter
+                      </li>
+                      <li className={`text-xs flex items-center ${/[0-9]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-500'}`}>
+                        <CheckCircle2 className={`h-3.5 w-3.5 mr-2 ${/[0-9]/.test(form.watch("password")) ? 'text-green-600' : 'text-gray-400'}`} />
+                        At least 1 number
+                      </li>
+                    </ul>
+                  </div>
+                )}
+
+                <FormField
+                  control={form.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-sm font-medium text-gray-700">
+                          Confirm Password
+                        </FormLabel>
+                      </div>
+                      <div className="relative mt-1">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                          <Lock size={16} />
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="Confirm your password"
+                            type={showConfirmPassword ? "text" : "password"}
+                            className="pl-10 pr-10 h-11 rounded-md border-gray-300 focus:border-primary focus:ring-primary"
+                            {...field}
+                          />
+                        </FormControl>
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      <FormMessage className="text-xs mt-1" />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="mt-8">
+                <button
+                  type="submit"
+                  disabled={isLoading || isSubmittingRef.current}
+                  className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary shadow-sm"
+                >
+                  {isLoading || isSubmittingRef.current ? (
+                    <span className="flex items-center justify-center">
+                      <span className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                      Creating Account...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center">
+                      Create Account
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div className="mt-6 text-center text-sm">
+                <span className="text-gray-600">Already have an account?</span>{" "}
+                <Link to="/login" className="font-medium text-primary hover:text-primary-dark transition-colors">
+                  Sign in
+                </Link>
               </div>
             </form>
           </Form>

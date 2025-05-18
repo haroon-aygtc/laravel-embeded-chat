@@ -16,7 +16,7 @@ export const WS_BASE_URL = import.meta.env.VITE_WEBSOCKET_URL ||
         'wss://' + window.location.host :
         'ws://' + window.location.host);
 
-export const WS_PORT = import.meta.env.VITE_WEBSOCKET_PORT || '3000';
+export const WS_PORT = import.meta.env.VITE_WEBSOCKET_PORT || '9000';
 export const WS_APP_KEY = import.meta.env.VITE_REVERB_APP_KEY || 'laravel-chat-key';
 
 // WebSocket Helper Functions

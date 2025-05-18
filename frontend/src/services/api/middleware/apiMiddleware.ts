@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '@/utils/logger';
 import { getCsrfToken as getAuthCsrfToken } from '@/utils/auth';
 import { env } from '@/config/env';
+import Cookies from 'js-cookie';
 
 // Extended request config to include our custom properties
 interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -213,7 +214,40 @@ const createApiClient = (): AxiosInstance => {
   instance.interceptors.request.use(
     async (config) => {
       // Add request ID for tracking
-      config.headers['X-Request-ID'] = generateRequestId();
+      const requestId = uuidv4();
+      config.headers['X-Request-ID'] = requestId;
+
+      // Set content type if not specified
+      if (!config.headers['Content-Type'] && !config.headers['content-type']) {
+        config.headers['Content-Type'] = 'application/json';
+      }
+
+      // Add auth token to headers if available
+      const authToken = localStorage.getItem('access_token');
+      if (authToken && !config.headers['Authorization']) {
+        config.headers['Authorization'] = authToken;
+        logger.debug(`Added auth token to request ${requestId}`);
+      }
+
+      // Check for CSRF token for requests that need it
+      if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
+        try {
+          // Try to get the CSRF token from cookies
+          const csrfToken = Cookies.get('XSRF-TOKEN');
+          if (csrfToken) {
+            config.headers['X-XSRF-TOKEN'] = decodeURIComponent(csrfToken);
+          } else {
+            // If not found in cookies, try to get a new one
+            await getAuthCsrfToken();
+            const newCsrfToken = Cookies.get('XSRF-TOKEN');
+            if (newCsrfToken) {
+              config.headers['X-XSRF-TOKEN'] = decodeURIComponent(newCsrfToken);
+            }
+          }
+        } catch (error) {
+          logger.error('Failed to get CSRF token for request:', error);
+        }
+      }
 
       // For HTTP methods that should be unique, create an AbortController and 
       // cancel any duplicate in-flight requests (GET, HEAD, OPTIONS)
@@ -240,54 +274,6 @@ const createApiClient = (): AxiosInstance => {
 
           // Attach cleanup to the config for use in response interceptor
           (config as ExtendedAxiosRequestConfig)._pendingRequestCleanup = removeFromTracking;
-        }
-      }
-
-      // For non-GET requests, ensure CSRF token is present
-      if (config.method !== 'get') {
-        try {
-          // Ensure CSRF token is available (will be sent automatically with cookies)
-          await getAuthCsrfToken();
-
-          // Extract CSRF token from cookie for headers
-          const cookies = document.cookie.split(';');
-          const xsrfToken = cookies
-            .find(cookie => cookie.trim().startsWith('XSRF-TOKEN='))
-            ?.split('=')[1];
-
-          if (xsrfToken) {
-            // Laravel expects the decrypted value, which is provided in the X-XSRF-TOKEN header
-            config.headers['X-XSRF-TOKEN'] = decodeURIComponent(xsrfToken);
-            logger.debug('Added CSRF token to request headers');
-          } else {
-            // If no XSRF token, try to get it one more time with forced refresh
-            logger.warn('No XSRF token found in cookies, forcing refresh...');
-
-            // Clear existing cookies to ensure we get a fresh token
-            document.cookie = "XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-            document.cookie = "laravel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-
-            await new Promise(resolve => setTimeout(resolve, 200));
-            await getAuthCsrfToken();
-
-            // Wait longer to ensure cookies are set
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Check again for the token
-            const refreshedCookies = document.cookie.split(';');
-            const refreshedToken = refreshedCookies
-              .find(cookie => cookie.trim().startsWith('XSRF-TOKEN='))
-              ?.split('=')[1];
-
-            if (refreshedToken) {
-              config.headers['X-XSRF-TOKEN'] = decodeURIComponent(refreshedToken);
-              logger.debug('Added refreshed CSRF token to request headers');
-            } else {
-              logger.error('Failed to obtain XSRF token after refresh attempt, request may fail');
-            }
-          }
-        } catch (error) {
-          logger.error('Failed to get CSRF token for request:', error);
         }
       }
 
@@ -380,8 +366,31 @@ const createApiClient = (): AxiosInstance => {
           data: error.response?.data
         });
 
-        // Don't automatically redirect - let the components handle auth redirects
-        // This prevents conflicts with the login/register flows
+        // Check if this is a login or token refresh request
+        const isAuthRequest = error.config?.url &&
+          ['/login', '/auth/login', '/token/refresh', '/auth/token', '/auth/refresh'].some(endpoint =>
+            error.config?.url?.includes(endpoint));
+
+        // Also check if this is a profile request which might fail during normal navigation
+        const isProfileRequest = error.config?.url &&
+          ['/profile', '/me', '/auth/me', '/user/profile'].some(endpoint =>
+            error.config?.url?.includes(endpoint));
+
+        // Only clear auth state for non-auth requests and non-profile requests
+        // This prevents clearing auth during login attempts or normal navigation
+        if (!isAuthRequest && !isProfileRequest) {
+          console.log('API Middleware: Clearing auth state due to 401 on protected endpoint');
+          // Import at runtime to avoid circular dependencies
+          const { AuthService } = require('@/services/authService');
+
+          const authService = AuthService.getInstance();
+          authService.clearAuth();
+
+          // We don't automatically redirect here - let the components handle redirects
+          // This prevents conflicts with the login/register flows
+        } else {
+          console.log('API Middleware: Not clearing auth state for auth/profile request');
+        }
       }
 
       return Promise.reject(error);

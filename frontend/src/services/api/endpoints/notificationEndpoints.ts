@@ -8,7 +8,7 @@ export const notificationEndpoints = {
     /**
      * WebSocket endpoint for real-time notifications
      */
-    wsNotifications: (userId: string) => `/app/notification?user=${userId}`,
+    wsNotifications: (userId: string) => `/websocket/notifications?user=${userId}`,
 
     /**
      * Get notifications for a user
@@ -39,4 +39,4 @@ export const notificationEndpoints = {
      * Delete a notification
      */
     deleteNotification: (id: string) => `/notifications/${id}`,
-}; 
+};

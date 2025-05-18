@@ -12,6 +12,7 @@ import AdminRoute from "@/components/auth/AdminRoute";
 import AdminLayout from "@/components/admin/layout/AdminLayout";
 import WebSocketTester from "@/components/websocket-demo/WebSocketTester";
 import WebSocketTestPage from "@/pages/websocket-test";
+import WebSocketTesterPage from "@/pages/websocket-tester";
 
 // Lazy-loaded admin components
 const Dashboard = lazy(() => import("@/pages/admin/dashboard"));
@@ -24,9 +25,6 @@ const ModerationRules = lazy(
   () => import("@/components/admin/ModerationRules"),
 );
 const UserManagement = lazy(() => import("@/components/admin/user-management"));
-const WidgetConfigurator = lazy(
-  () => import("@/components/admin/WidgetConfigurator"),
-);
 const ContextRulesEditor = lazy(
   () => import("@/components/admin/ContextRulesEditor"),
 );
@@ -38,11 +36,6 @@ const EmbedCodeGenerator = lazy(
 );
 const SystemSettings = lazy(() => import("@/components/admin/SystemSettings"));
 
-// Widget management pages
-const WidgetsPage = lazy(() => import("@/pages/admin/widgets"));
-const CreateWidgetPage = lazy(() => import("@/pages/admin/widgets/create"));
-const EditWidgetPage = lazy(() => import("@/pages/admin/widgets/edit/[id]"));
-
 // Lazy-loaded user components
 const ProfilePage = lazy(() => import("@/pages/user/profile"));
 
@@ -51,9 +44,6 @@ const TutorialIntroduction = lazy(
   () => import("@/components/tutorial/TutorialIntroduction"),
 );
 const SetupGuide = lazy(() => import("@/components/tutorial/SetupGuide"));
-const ChatWidgetTutorial = lazy(
-  () => import("@/components/tutorial/ChatWidgetTutorial"),
-);
 const AdminDashboardTutorial = lazy(
   () => import("@/components/tutorial/AdminDashboardTutorial"),
 );
@@ -93,8 +83,9 @@ const AppRoutes = () => {
       <Route path="/chat" element={<ChatPage />} />
       <Route path="/chat-embed" element={<ChatEmbedPage />} />
 
-      {/* WebSocket test route */}
+      {/* WebSocket test routes */}
       <Route path="/websocket-test" element={<WebSocketTestPage />} />
+      <Route path="/websocket-tester" element={<WebSocketTesterPage />} />
 
       {/* User routes */}
       <Route
@@ -132,39 +123,6 @@ const AppRoutes = () => {
           element={
             <Suspense fallback={<LoadingFallback />}>
               <UserManagement />
-            </Suspense>
-          }
-        />
-        <Route
-          path="widget-config"
-          element={
-            <Suspense fallback={<LoadingFallback />}>
-              <WidgetConfigurator />
-            </Suspense>
-          }
-        />
-        {/* Widget Management Routes */}
-        <Route
-          path="widgets"
-          element={
-            <Suspense fallback={<LoadingFallback />}>
-              <WidgetsPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="widgets/create"
-          element={
-            <Suspense fallback={<LoadingFallback />}>
-              <CreateWidgetPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="widgets/edit/:id"
-          element={
-            <Suspense fallback={<LoadingFallback />}>
-              <EditWidgetPage />
             </Suspense>
           }
         />
@@ -238,11 +196,7 @@ const AppRoutes = () => {
       {/* Tutorial routes */}
       <Route path="/tutorial" element={<TutorialIntroduction />} />
       <Route path="/tutorial/setup" element={<SetupGuide />} />
-      <Route path="/tutorial/chat-widget" element={<ChatWidgetTutorial />} />
-      <Route
-        path="/tutorial/admin-dashboard"
-        element={<AdminDashboardTutorial />}
-      />
+      <Route path="/tutorial/admin-dashboard" element={<AdminDashboardTutorial />} />
       <Route path="/tutorial/embedding" element={<EmbeddingTutorial />} />
       <Route path="/tutorial/websocket" element={<WebSocketClientDemo />} />
       <Route

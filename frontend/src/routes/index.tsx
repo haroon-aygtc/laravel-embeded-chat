@@ -4,6 +4,12 @@ import { PageLoader } from '@/components/ui/page-loader';
 import { useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/context/PermissionContext';
 
+// Import widget components
+import WidgetListPage from '@/pages/admin/widgets/index';
+import CreateWidgetPage from '@/pages/admin/widgets/create';
+import EditWidgetPage from '@/pages/admin/widgets/edit';
+import EmbedCodeGenerator from '@/components/admin/EmbedCodeGenerator';
+
 // Placeholder component for pages that don't exist yet
 const PlaceholderPage = ({ pageName }: { pageName: string }) => (
     <div className="flex flex-col items-center justify-center min-h-screen p-4">
@@ -25,17 +31,28 @@ const ErrorPage = () => <PlaceholderPage pageName="Error" />;
 // Main app pages
 const DashboardPage = () => <PlaceholderPage pageName="Dashboard" />;
 const ProfilePage = () => <PlaceholderPage pageName="Profile" />;
-const ChatPage = React.lazy(() => import('@/pages/chat'));
+const ChatPage = React.lazy(() => import('@/pages/chat/index'));
 
 // Admin routes
 const AdminDashboardPage = () => <PlaceholderPage pageName="Admin Dashboard" />;
 const AdminUsersPage = () => <PlaceholderPage pageName="User Management" />;
-const AdminUserRolesPage = React.lazy(() => import('@/pages/admin/user/roles'));
-const AdminAiProvidersPage = React.lazy(() => import('@/pages/admin/ai-providers'));
+const AdminUserRolesPage = () => <PlaceholderPage pageName="User Roles Management" />;
+const AdminAiProvidersPage = () => <PlaceholderPage pageName="AI Providers Management" />;
+const AdminWidgetsTestPage = () => <PlaceholderPage pageName="Widgets Test" />;
 const AdminKnowledgeBasePage = () => <PlaceholderPage pageName="Knowledge Base Management" />;
 const AdminContextRulesPage = () => <PlaceholderPage pageName="Context Rules Management" />;
 const AdminPromptTemplatesPage = () => <PlaceholderPage pageName="Prompt Templates Management" />;
+const AdminModerationQueuePage = () => <PlaceholderPage pageName="Moderation Queue Management" />;
+const AdminModerationRulesPage = () => <PlaceholderPage pageName="Moderation Rules Management" />;
+const AdminModerationLogsPage = () => <PlaceholderPage pageName="Moderation Logs Management" />;
+const AdminFollowUpsPage = () => <PlaceholderPage pageName="Follow Ups Management" />;
+const AdminResponseFormattingPage = () => <PlaceholderPage pageName="Response Formatting Management" />;
+const AdminResponseTemplatesPage = () => <PlaceholderPage pageName="Response Templates Management" />;
+const AdminGuestUserPage = () => <PlaceholderPage pageName="Guest User Management" />;
+const AdminGuestUserLogsPage = () => <PlaceholderPage pageName="Guest User Logs Management" />;
+const AdminAIConfigPage = () => <PlaceholderPage pageName="AI Config Management" />;
 const AdminSettingsPage = () => <PlaceholderPage pageName="Admin Settings" />;
+const AdminEmbedCodePage = () => <div className="p-6"><EmbedCodeGenerator /></div>;
 
 // Route Guards
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
@@ -112,10 +129,27 @@ const AppRoutes = () => {
                 <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
                 <Route path="/admin/users/roles" element={<AdminRoute><AdminUserRolesPage /></AdminRoute>} />
                 <Route path="/admin/ai-providers" element={<AdminRoute><AdminAiProvidersPage /></AdminRoute>} />
+
+                {/* Widget management routes */}
+                <Route path="/admin/widgets" element={<AdminRoute><WidgetListPage /></AdminRoute>} />
+                <Route path="/admin/widgets/create" element={<AdminRoute><CreateWidgetPage /></AdminRoute>} />
+                <Route path="/admin/widgets/edit/:id" element={<AdminRoute><EditWidgetPage /></AdminRoute>} />
+                <Route path="/admin/embed-code" element={<AdminRoute><AdminEmbedCodePage /></AdminRoute>} />
+                <Route path="/admin/widgets/test" element={<AdminRoute><AdminWidgetsTestPage /></AdminRoute>} />
+
                 <Route path="/admin/knowledge-base" element={<AdminRoute><AdminKnowledgeBasePage /></AdminRoute>} />
                 <Route path="/admin/context-rules" element={<AdminRoute><AdminContextRulesPage /></AdminRoute>} />
                 <Route path="/admin/prompt-templates" element={<AdminRoute><AdminPromptTemplatesPage /></AdminRoute>} />
                 <Route path="/admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
+                <Route path="/admin/moderation-queue" element={<AdminRoute><AdminModerationQueuePage /></AdminRoute>} />
+                <Route path="/admin/moderation-rules" element={<AdminRoute><AdminModerationRulesPage /></AdminRoute>} />
+                <Route path="/admin/moderation-logs" element={<AdminRoute><AdminModerationLogsPage /></AdminRoute>} />
+                <Route path="/admin/follow-ups" element={<AdminRoute><AdminFollowUpsPage /></AdminRoute>} />
+                <Route path="/admin/response-formatting" element={<AdminRoute><AdminResponseFormattingPage /></AdminRoute>} />
+                <Route path="/admin/response-templates" element={<AdminRoute><AdminResponseTemplatesPage /></AdminRoute>} />
+                <Route path="/admin/guest-user" element={<AdminRoute><AdminGuestUserPage /></AdminRoute>} />
+                <Route path="/admin/guest-user-logs" element={<AdminRoute><AdminGuestUserLogsPage /></AdminRoute>} />
+                <Route path="/admin/ai-config" element={<AdminRoute><AdminAIConfigPage /></AdminRoute>} />
 
                 {/* Fallback route */}
                 <Route path="*" element={<Navigate to="/error" />} />

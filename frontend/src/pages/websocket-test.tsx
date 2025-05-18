@@ -79,7 +79,7 @@ const WebSocketTestPage = () => {
                                 <code>php artisan reverb:start</code>
                             </pre>
                         </div>
-                        <p>The Laravel Reverb server runs on port 6001 by default.</p>
+                        <p>The Laravel Reverb server runs on port 9001 by default.</p>
                         <div className="bg-amber-50 border-l-4 border-amber-500 p-4 my-2">
                             <p className="text-amber-700">Note: No separate Node.js server is needed with Laravel Reverb.</p>
                         </div>

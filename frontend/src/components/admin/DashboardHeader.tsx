@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Bell, Search, Settings, User, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import notificationService, { Notification } from "@/services/notificationServic
 interface DashboardHeaderProps {
   title: string;
   description: string;
-  
+
 }
 
 export function DashboardHeader({ title, description }: DashboardHeaderProps) {
@@ -75,11 +75,6 @@ export function DashboardHeader({ title, description }: DashboardHeaderProps) {
   }, [user?.id]);
 
   const handleNotificationClick = async (notification: Notification) => {
-    // If notification has a link, navigate to it
-    if (notification.link) {
-      navigate(notification.link);
-    }
-
     // Mark notification as read if not already read
     if (!notification.read) {
       const success = await notificationService.markNotificationsAsRead([notification.id]);
@@ -117,7 +112,7 @@ export function DashboardHeader({ title, description }: DashboardHeaderProps) {
   const handleLogout = async () => {
     try {
       await logout();
-      navigate("/auth/login");
+      navigate("/login");
     } catch (error) {
       console.error("Logout failed:", error);
     }
@@ -183,37 +178,61 @@ export function DashboardHeader({ title, description }: DashboardHeaderProps) {
               ) : (
                 <div className="max-h-[300px] overflow-y-auto">
                   {notifications.map((notification) => (
-                    <DropdownMenuItem
-                      key={notification.id}
-                      className={cn(
-                        "flex flex-col items-start p-4 cursor-pointer",
-                        !notification.read && "bg-muted/50"
-                      )}
-                      onClick={() => handleNotificationClick(notification)}
-                    >
-                      <div className="flex w-full justify-between">
-                        <span className="font-medium">{notification.title}</span>
-                        {!notification.read && (
-                          <span className="flex h-2 w-2 rounded-full bg-blue-600"></span>
+                    notification.link ? (
+                      <Link to={notification.link} key={notification.id} className="w-full">
+                        <DropdownMenuItem
+                          className={cn(
+                            "flex flex-col items-start p-4 cursor-pointer",
+                            !notification.read && "bg-muted/50"
+                          )}
+                          onClick={() => handleNotificationClick(notification)}
+                        >
+                          <div className="flex w-full justify-between">
+                            <span className="font-medium">{notification.title}</span>
+                            {!notification.read && (
+                              <span className="flex h-2 w-2 rounded-full bg-blue-600"></span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+                            {notification.message}
+                          </p>
+                          <span className="text-xs text-muted-foreground mt-2">
+                            {new Date(notification.created_at).toLocaleString()}
+                          </span>
+                        </DropdownMenuItem>
+                      </Link>
+                    ) : (
+                      <DropdownMenuItem
+                        key={notification.id}
+                        className={cn(
+                          "flex flex-col items-start p-4 cursor-pointer",
+                          !notification.read && "bg-muted/50"
                         )}
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                        {notification.message}
-                      </p>
-                      <span className="text-xs text-muted-foreground mt-2">
-                        {new Date(notification.created_at).toLocaleString()}
-                      </span>
-                    </DropdownMenuItem>
+                        onClick={() => handleNotificationClick(notification)}
+                      >
+                        <div className="flex w-full justify-between">
+                          <span className="font-medium">{notification.title}</span>
+                          {!notification.read && (
+                            <span className="flex h-2 w-2 rounded-full bg-blue-600"></span>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+                          {notification.message}
+                        </p>
+                        <span className="text-xs text-muted-foreground mt-2">
+                          {new Date(notification.created_at).toLocaleString()}
+                        </span>
+                      </DropdownMenuItem>
+                    )
                   ))}
                 </div>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="justify-center text-center"
-                onClick={() => navigate("/notifications")}
-              >
-                View all
-              </DropdownMenuItem>
+              <Link to="/notifications" className="w-full">
+                <DropdownMenuItem className="justify-center text-center">
+                  View all
+                </DropdownMenuItem>
+              </Link>
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
@@ -247,14 +266,18 @@ export function DashboardHeader({ title, description }: DashboardHeaderProps) {
                 </p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/profile")}>
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/settings")}>
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </DropdownMenuItem>
+              <Link to="/profile" className="w-full">
+                <DropdownMenuItem>
+                  <User className="mr-2 h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+              </Link>
+              <Link to="/settings" className="w-full">
+                <DropdownMenuItem>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+              </Link>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />

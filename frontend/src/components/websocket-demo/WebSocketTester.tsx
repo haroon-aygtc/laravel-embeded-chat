@@ -5,25 +5,40 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+const port = process.env.REVERB_SERVER_PORT || "9001";
+const host = process.env.REVERB_SERVER_HOST || "localhost";
+const path = process.env.REVERB_SERVER_PATH || "/app";
+const appKey = process.env.REVERB_APP_KEY || "oym6uc7yfal3czh40rkg";
+
 const WebSocketTester = () => {
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [messages, setMessages] = useState<string[]>([]);
     const [inputMessage, setInputMessage] = useState("");
-    const [wsUrl, setWsUrl] = useState(`ws://${window.location.hostname}:6001/app/laravel-app-key`);
+    const [wsUrl, setWsUrl] = useState(`ws://${host}:${port}${path}/${appKey}`);
     const [clientId, setClientId] = useState<string | null>(null);
     const [channel, setChannel] = useState("public-channel");
 
-    // Connect to WebSocket
-    const connect = () => {
-        try {
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleConnect = async () => {
+        setIsLoading(true);
+        setError(null);
+
+                try {
+                    const response = await fetch(wsUrl);
+            if (!response.ok) {
+                throw new Error("Failed to connect to WebSocket server");
+            }
+
             const newSocket = new WebSocket(wsUrl);
 
             newSocket.onopen = () => {
                 setIsConnected(true);
                 setMessages(prev => [...prev, "✅ Connected to Laravel Reverb WebSocket server"]);
 
-                // Generate random client ID for demo purposes
+                // Generate random client ID for demo purposes  
                 const randomId = Math.random().toString(36).substring(2, 10);
                 setClientId(randomId);
                 setMessages(prev => [...prev, `📩 Your client ID is: ${randomId}`]);
@@ -67,6 +82,8 @@ const WebSocketTester = () => {
             setMessages(prev => [...prev, `❌ Connection error: ${error}`]);
         }
     };
+
+   
 
     // Disconnect WebSocket
     const disconnect = () => {
@@ -150,11 +167,11 @@ const WebSocketTester = () => {
                     <Input
                         value={wsUrl}
                         onChange={(e) => setWsUrl(e.target.value)}
-                        placeholder="WebSocket URL (e.g., ws://localhost:6001/app/laravel-app-key)"
+                        placeholder="WebSocket URL (e.g., ws://localhost:9001/app/laravel-app-key)"
                         className="flex-1"
                     />
                     {!isConnected ? (
-                        <Button onClick={connect}>Connect</Button>
+                        <Button onClick={handleConnect}>Connect</Button>
                     ) : (
                         <Button variant="destructive" onClick={disconnect}>
                             Disconnect

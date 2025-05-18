@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Widget Demo</title>
+    <title>The Last Lab - Chat Widget Implementation Demo</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -37,6 +37,8 @@
 
         .section {
             margin-bottom: 2rem;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 2rem;
         }
 
         .demo-container {
@@ -62,10 +64,67 @@
             border-radius: 4px;
             cursor: pointer;
             margin-top: 1rem;
+            margin-right: 0.5rem;
         }
 
         .btn:hover {
             background-color: #4338ca;
+        }
+
+        .options-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .option-box {
+            flex: 1;
+            min-width: 200px;
+            padding: 1rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .option-box h3 {
+            margin-top: 0;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+        }
+
+        .alert {
+            background-color: #fee2e2;
+            color: #b91c1c;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .alert.success {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
         }
     </style>
 </head>
@@ -73,107 +132,244 @@
 <body>
     <header>
         <div class="container">
-            <h1>Laravel Embedded Chat Widget Demo</h1>
+            <h1>The Last Lab AI Chat Widget</h1>
         </div>
     </header>
 
     <div class="container">
         <div class="content">
             <div class="section">
-                <h2>Floating Chat Widget Example</h2>
-                <p>This example shows the chat widget as a floating button in the corner of the page.</p>
+                <h2>Floating Chat Widget</h2>
+                <p>This example shows how to add a floating chat widget that appears in the corner of your website.</p>
                 <div class="code-block">
-                    <pre><code>&lt;script src="embed.js"&gt;&lt;/script&gt;
+                    <pre><code>&lt;!-- Add this script to your website --&gt;
+&lt;script src="https://app.thelastlab.io/widget.js" defer&gt;&lt;/script&gt;
+
 &lt;script&gt;
   document.addEventListener('DOMContentLoaded', function() {
-    LaravelChat.init({
-      widgetId: 'your-widget-id',
-      position: 'bottom-right',
-      primaryColor: '#4f46e5'
+    TheLastLab.initChat({
+      widgetId: 'your-widget-id',  // Replace with your widget ID
+      position: 'bottom-right',     // Optional: 'bottom-right', 'bottom-left', 'top-right', 'top-left'
+      primaryColor: '#4F46E5',      // Optional: primary color for the widget
+      theme: 'light'                // Optional: 'light', 'dark', or 'auto'
     });
   });
 &lt;/script&gt;</code></pre>
                 </div>
-                <p>The widget should appear in the bottom-right corner of this page.</p>
+                <p>A floating chat widget should appear in the bottom-right corner of this page. Try clicking on it!</p>
             </div>
 
             <div class="section">
-                <h2>Embedded Chat Widget Example</h2>
-                <p>This example shows the chat widget embedded directly within a container on the page.</p>
+                <h2>Embedded Chat Widget</h2>
+                <p>This example shows how to embed the chat widget directly within a container on your webpage.</p>
                 <div class="code-block">
-                    <pre><code>&lt;div id="embedded-chat" style="width: 100%; height: 500px;"&gt;&lt;/div&gt;
+                    <pre><code>&lt;!-- Create a container element --&gt;
+&lt;div id="chat-container" style="width: 100%; height: 500px; max-width: 400px;"&gt;&lt;/div&gt;
 
+&lt;script src="https://app.thelastlab.io/widget.js" defer&gt;&lt;/script&gt;
 &lt;script&gt;
-  LaravelChat.init({
-    widgetId: 'your-widget-id',
-    container: 'embedded-chat'
+  document.addEventListener('DOMContentLoaded', function() {
+    TheLastLab.initChat({
+      widgetId: 'your-widget-id',  // Replace with your widget ID
+      container: 'chat-container',  // ID of the container element
+      theme: 'light'                // Optional: 'light', 'dark', or 'auto'
+    });
   });
 &lt;/script&gt;</code></pre>
                 </div>
                 <div id="embedded-chat" class="demo-container"></div>
+                <button class="btn" onclick="reinitEmbedded()">Reload Embedded Chat</button>
             </div>
 
             <div class="section">
-                <h2>Chat Controls Example</h2>
-                <p>You can programmatically control the chat widget:</p>
+                <h2>Customization Options</h2>
+                <p>The chat widget can be customized with various options:</p>
+
+                <div class="options-container">
+                    <div class="option-box">
+                        <h3>Appearance</h3>
+                        <div class="form-group">
+                            <label for="position">Position:</label>
+                            <select id="position">
+                                <option value="bottom-right">Bottom Right</option>
+                                <option value="bottom-left">Bottom Left</option>
+                                <option value="top-right">Top Right</option>
+                                <option value="top-left">Top Left</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="theme">Theme:</label>
+                            <select id="theme">
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                                <option value="auto">Auto (System)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="primary-color">Primary Color:</label>
+                            <input type="color" id="primary-color" value="#4F46E5">
+                        </div>
+                    </div>
+
+                    <div class="option-box">
+                        <h3>Behavior</h3>
+                        <div class="form-group">
+                            <label for="auto-open">Auto Open:</label>
+                            <select id="auto-open">
+                                <option value="false">Disabled</option>
+                                <option value="true">Enabled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="open-delay">Open Delay (seconds):</label>
+                            <input type="number" id="open-delay" value="5" min="1" max="60">
+                        </div>
+                        <div class="form-group">
+                            <label for="notifications">Show Notifications:</label>
+                            <select id="notifications">
+                                <option value="true">Enabled</option>
+                                <option value="false">Disabled</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn" onclick="applyCustomSettings()">Apply Settings</button>
+                <button class="btn" onclick="resetSettings()">Reset to Defaults</button>
+            </div>
+
+            <div class="section">
+                <h2>JavaScript API</h2>
+                <p>You can programmatically control the chat widget with these methods:</p>
                 <div class="code-block">
                     <pre><code>// Open the chat widget
-LaravelChat.open();
+TheLastLab.openChat();
 
 // Close the chat widget
-LaravelChat.close();
+TheLastLab.closeChat();
 
-// Remove the chat widget from the page
-LaravelChat.destroy();</code></pre>
+// Reset the current session
+TheLastLab.resetSession();</code></pre>
                 </div>
-                <button class="btn" onclick="openChat()">Open Chat</button>
-                <button class="btn" onclick="closeChat()">Close Chat</button>
-                <button class="btn" onclick="reinitChat()">Reinitialize Chat</button>
+                <button class="btn" onclick="TheLastLab.openChat()">Open Chat</button>
+                <button class="btn" onclick="TheLastLab.closeChat()">Close Chat</button>
+                <button class="btn" onclick="TheLastLab.resetSession()">Reset Session</button>
+            </div>
+
+            <div class="section">
+                <h2>Need Help?</h2>
+                <p>If you need assistance implementing the chat widget on your website, please contact our support team:
+                </p>
+                <ul>
+                    <li>Email: <a href="mailto:support@thelastlab.io">support@thelastlab.io</a></li>
+                    <li>Documentation: <a href="https://docs.thelastlab.io/chat-widget"
+                            target="_blank">docs.thelastlab.io/chat-widget</a></li>
+                </ul>
             </div>
         </div>
     </div>
 
     <!-- Load the chat widget script -->
-    <script src="embed.js"></script>
+    <script>
+        // Set custom URLs for local development
+        window.WIDGET_API_URL = window.location.hostname === 'localhost' ? 'http://localhost:9000/api' : null;
+        window.WIDGET_FRONTEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : null;
+    </script>
+    <script src="widget.js"></script>
 
     <script>
-        // Initialize the floating chat widget
+        // Default widget settings
+        const widgetId = 'demo-widget-id'; // Replace with a real widget ID
+        let currentSettings = {
+            widgetId: widgetId,
+            position: 'bottom-right',
+            primaryColor: '#4F46E5',
+            theme: 'light',
+            autoOpen: false,
+            openDelay: 5,
+            showNotifications: true
+        };
+
+        // Initialize the widgets when the page loads
         document.addEventListener('DOMContentLoaded', function () {
             // Initialize the floating widget
-            LaravelChat.init({
-                widgetId: 'demo-widget-id', // Replace with your actual widget ID
-                position: 'bottom-right',
-                primaryColor: '#4f46e5'
-            });
+            TheLastLab.initChat(currentSettings);
 
             // Initialize the embedded widget
-            LaravelChat.init({
-                widgetId: 'demo-widget-id', // Replace with your actual widget ID
+            TheLastLab.initChat({
+                widgetId: widgetId,
                 container: 'embedded-chat',
-                primaryColor: '#4f46e5'
+                theme: 'light'
             });
+
+            // Set form values to match current settings
+            document.getElementById('position').value = currentSettings.position;
+            document.getElementById('theme').value = currentSettings.theme;
+            document.getElementById('primary-color').value = currentSettings.primaryColor;
+            document.getElementById('auto-open').value = currentSettings.autoOpen.toString();
+            document.getElementById('open-delay').value = currentSettings.openDelay;
+            document.getElementById('notifications').value = currentSettings.showNotifications.toString();
         });
 
-        // Control functions
-        function openChat() {
-            LaravelChat.open();
+        // Function to reinitialize the embedded chat
+        function reinitEmbedded() {
+            const container = document.getElementById('embedded-chat');
+            container.innerHTML = '';
+
+            TheLastLab.initChat({
+                widgetId: widgetId,
+                container: 'embedded-chat',
+                theme: document.getElementById('theme').value
+            });
         }
 
-        function closeChat() {
-            LaravelChat.close();
+        // Function to apply custom settings
+        function applyCustomSettings() {
+            // Get values from form
+            const position = document.getElementById('position').value;
+            const theme = document.getElementById('theme').value;
+            const primaryColor = document.getElementById('primary-color').value;
+            const autoOpen = document.getElementById('auto-open').value === 'true';
+            const openDelay = parseInt(document.getElementById('open-delay').value);
+            const showNotifications = document.getElementById('notifications').value === 'true';
+
+            // Update settings
+            currentSettings = {
+                widgetId: widgetId,
+                position: position,
+                primaryColor: primaryColor,
+                theme: theme,
+                autoOpen: autoOpen,
+                openDelay: openDelay,
+                showNotifications: showNotifications
+            };
+
+            // This is a demo - in a real scenario you would reinitialize
+            // For now, we'll just tell the user what would happen
+            alert(`Settings updated! In a real implementation, the widget would be reinitialized with:\n\n${JSON.stringify(currentSettings, null, 2)}`);
         }
 
-        function reinitChat() {
-            LaravelChat.destroy();
+        // Reset settings to defaults
+        function resetSettings() {
+            document.getElementById('position').value = 'bottom-right';
+            document.getElementById('theme').value = 'light';
+            document.getElementById('primary-color').value = '#4F46E5';
+            document.getElementById('auto-open').value = 'false';
+            document.getElementById('open-delay').value = '5';
+            document.getElementById('notifications').value = 'true';
 
-            // Reinitialize after a short delay
-            setTimeout(function () {
-                LaravelChat.init({
-                    widgetId: 'demo-widget-id', // Replace with your actual widget ID
-                    position: 'bottom-right',
-                    primaryColor: '#4f46e5'
-                });
-            }, 500);
+            // Update current settings
+            currentSettings = {
+                widgetId: widgetId,
+                position: 'bottom-right',
+                primaryColor: '#4F46E5',
+                theme: 'light',
+                autoOpen: false,
+                openDelay: 5,
+                showNotifications: true
+            };
+
+            alert('Settings reset to defaults!');
         }
     </script>
 </body>

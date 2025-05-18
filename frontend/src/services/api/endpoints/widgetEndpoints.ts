@@ -1,90 +1,50 @@
 /**
  * Widget API Endpoints
- *
- * Defines the API endpoints for widget operations
+ * 
+ * Defines API endpoints for widget management and operations
  */
 
-// Import from the core API client instead of the missing config module
-import { API_BASE_URL } from "@/services/api/core/apiClient";
-
-// Create local apiConfig object
-const apiConfig = {
-  baseUrl: API_BASE_URL
-};
-
 export const widgetEndpoints = {
-  // Get all widgets
-  getAllWidgets: () => `${apiConfig.baseUrl}/widgets`,
+    // Admin/Management APIs
+    getAllWidgets: '/widgets',
+    getWidgetById: (id: string) => `/widgets/${id}`,
+    createWidget: '/widgets',
+    updateWidget: (id: string) => `/widgets/${id}`,
+    deleteWidget: (id: string) => `/widgets/${id}`,
 
-  // Get a single widget by ID
-  getWidgetById: (id: string) => `${apiConfig.baseUrl}/widgets/${id}`,
+    // Widget Status Management
+    activateWidget: (id: string) => `/widgets/${id}/activate`,
+    deactivateWidget: (id: string) => `/widgets/${id}/deactivate`,
 
-  // Create a new widget
-  createWidget: () => `${apiConfig.baseUrl}/widgets`,
+    // Widget Settings Updates
+    updateAppearance: (id: string) => `/widgets/${id}/appearance`,
+    updateBehavior: (id: string) => `/widgets/${id}/behavior`,
+    updateContent: (id: string) => `/widgets/${id}/content`,
 
-  // Update a widget
-  updateWidget: (id: string) => `${apiConfig.baseUrl}/widgets/${id}`,
+    // Domain Management
+    validateDomain: (widgetId: string, domain: string) => `/widgets/${widgetId}/domains/validate?domain=${encodeURIComponent(domain)}`,
+    addAllowedDomain: (widgetId: string) => `/widgets/${widgetId}/domains`,
+    removeAllowedDomain: (widgetId: string, domain: string) => `/widgets/${widgetId}/domains/${encodeURIComponent(domain)}`,
 
-  // Delete a widget
-  deleteWidget: (id: string) => `${apiConfig.baseUrl}/widgets/${id}`,
+    // Embedding
+    getEmbedCode: (id: string, type: 'script' | 'iframe' | 'webcomponent') =>
+        `/widgets/${id}/embed?type=${type}`,
 
-  // Activate a widget
-  activateWidget: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/activate`,
+    // Analytics
+    getWidgetAnalytics: (id: string, timeRange: '7d' | '30d' | '90d') =>
+        `/widgets/${id}/analytics?period=${timeRange}`,
 
-  // Deactivate a widget
-  deactivateWidget: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/deactivate`,
+    // Client-facing Widget API (used by embedded widgets)
+    getWidgetConfig: (id: string) => `/widget-client/${id}/config`,
+    createChatSession: (widgetId: string) => `/widget-client/${widgetId}/sessions`,
+    getSessionMessages: (sessionId: string, page = 1, limit = 50) =>
+        `/widget-client/sessions/${sessionId}/messages?page=${page}&limit=${limit}`,
+    sendMessage: (sessionId: string) => `/widget-client/sessions/${sessionId}/messages`,
+    endSession: (sessionId: string) => `/widget-client/sessions/${sessionId}/end`,
 
-  // Get widget embed code
-  getWidgetEmbedCode: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/embed-code`,
+    // User Management
+    getUserWidgets: (userId: string) => `/users/${userId}/widgets`,
 
-  // Widget client endpoints
-  getWidgetConfig: (id: string) => `${apiConfig.baseUrl}/widget-client/${id}/config`,
-
-  // Get widget session
-  getWidgetSession: (sessionId: string) => `${apiConfig.baseUrl}/widget-client/sessions/${sessionId}`,
-
-  // Create widget session
-  createWidgetSession: (widgetId: string) => `${apiConfig.baseUrl}/widget-client/${widgetId}/sessions`,
-
-  // Get messages for a session
-  getSessionMessages: (sessionId: string) => `${apiConfig.baseUrl}/widget-client/sessions/${sessionId}/messages`,
-
-  // Send a message in a session
-  sendMessage: (sessionId: string) => `${apiConfig.baseUrl}/widget-client/sessions/${sessionId}/messages`,
-
-  // Get widget analytics
-  getWidgetAnalytics: (id: string, timeRange: string) => `${apiConfig.baseUrl}/widgets/${id}/analytics?timeRange=${timeRange}`,
-
-  // Get widget usage
-  getWidgetUsage: (id: string, timeRange: string) => `${apiConfig.baseUrl}/widgets/${id}/usage?timeRange=${timeRange}`,
-
-  // Get widgets for a user
-  getWidgetsByUser: (userId: string) => `${apiConfig.baseUrl}/users/${userId}/widgets`,
-
-  // Get widget settings
-  getWidgetSettings: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/settings`,
-
-  // Update widget settings
-  updateWidgetSettings: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/settings`,
-
-  // Update widget appearance
-  updateWidgetAppearance: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/appearance`,
-
-  // Update widget behavior
-  updateWidgetBehavior: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/behavior`,
-
-  // Update allowed domains
-  updateAllowedDomains: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/domains`,
-
-  // Get allowed domains
-  getAllowedDomains: (id: string) => `${apiConfig.baseUrl}/widgets/${id}/domains`,
-
-  // Get widget config by user ID
-  getWidgetConfigByUserId: (userId: string) => `${apiConfig.baseUrl}/widgets/config/user/${userId}`,
-
-  // Create widget config
-  createWidgetConfig: () => `${apiConfig.baseUrl}/widgets/config`,
-
-  // Update widget config
-  updateWidgetConfig: (id: string) => `${apiConfig.baseUrl}/widgets/config/${id}`,
-};
+    // Widget Status Management
+    toggleWidgetStatus: (widgetId: string) => `/widgets/${widgetId}/toggle-status`,
+}; 

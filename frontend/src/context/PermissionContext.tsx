@@ -67,23 +67,47 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
 
         try {
             setLoading(true);
-            const response = await roleApi.getUserPermissions();
 
-            if (response.success && response.data) {
-                setUserPermissions(response.data);
-            } else {
-                logger.warn('Failed to load user permissions');
-                // Set default permissions based on user role
-                if (user) {
+            // Make sure we have a user object before proceeding
+            if (!user) {
+                logger.warn('User is authenticated but user object is missing');
+                setLoading(false);
+                return;
+            }
+
+            try {
+                const response = await roleApi.getUserPermissions();
+
+                if (response.success && response.data) {
+                    setUserPermissions(response.data);
+                } else {
+                    logger.warn('Failed to load user permissions from API, using defaults');
+                    // Set default permissions based on user role
                     setUserPermissions({
                         role: user.role,
-                        isAdmin: user.role === 'admin',
+                        isAdmin: user.role === 'admin' || user.role === 'super_admin',
                         permissions: defaultPermissions
                     });
                 }
+            } catch (apiError) {
+                logger.error('API error loading permissions', apiError);
+                // Fallback to default permissions based on user role
+                setUserPermissions({
+                    role: user.role,
+                    isAdmin: user.role === 'admin' || user.role === 'super_admin',
+                    permissions: defaultPermissions
+                });
             }
         } catch (error) {
-            logger.error('Error loading permissions', error);
+            logger.error('Error in permission loading process', error);
+            // Set minimal permissions as a last resort
+            if (user) {
+                setUserPermissions({
+                    role: user.role,
+                    isAdmin: user.role === 'admin' || user.role === 'super_admin',
+                    permissions: defaultPermissions
+                });
+            }
         } finally {
             setLoading(false);
         }
@@ -100,7 +124,11 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
         // Admin has all permissions
         if (userPermissions.isAdmin) return true;
 
-        return userPermissions.permissions[permission] || false;
+        // Safely check if permissions exist and if the specific permission is granted
+        return userPermissions.permissions &&
+            typeof userPermissions.permissions === 'object' &&
+            permission in userPermissions.permissions ?
+            !!userPermissions.permissions[permission] : false;
     };
 
     const hasRole = (role: string | string[]): boolean => {
@@ -132,4 +160,4 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
             {children}
         </PermissionContext.Provider>
     );
-}; 
+};

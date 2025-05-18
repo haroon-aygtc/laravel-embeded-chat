@@ -46,8 +46,8 @@ class KnowledgeBaseController extends Controller
         }
 
         // Extract parameters with defaults
-        $page = $request->input('page', 1);
-        $perPage = $request->input('per_page', 15);
+        $page = (int)$request->input('page', 1);
+        $perPage = (int)$request->input('per_page', 15);
         $sortBy = $request->input('sort_by', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
         $filterByPublic = $request->has('filter_by_public') ? (bool)$request->input('filter_by_public') : null;
@@ -145,8 +145,8 @@ class KnowledgeBaseController extends Controller
         }
 
         // Extract parameters with defaults
-        $page = $request->input('page', 1);
-        $perPage = $request->input('per_page', 20);
+        $page = (int)$request->input('page', 1);
+        $perPage = (int)$request->input('per_page', 20);
         $sortBy = $request->input('sort_by', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc');
         $filterByType = $request->input('filter_by_type');
@@ -297,7 +297,7 @@ class KnowledgeBaseController extends Controller
             Auth::user(),
             $request->input('query'),
             $request->input('knowledge_base_ids'),
-            $request->input('max_results', 50),
+            (int)$request->input('max_results', 50),
             $request->input('filter_by_type'),
             $request->input('tags', [])
         );
@@ -318,7 +318,7 @@ class KnowledgeBaseController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $limit = $request->input('limit', 5);
+        $limit = (int)$request->input('limit', 5);
         $minSimilarityScore = $request->input('min_similarity_score');
         $useVectors = $request->input('use_vectors', true);
 
@@ -379,7 +379,7 @@ class KnowledgeBaseController extends Controller
 
     /**
      * Advanced search across knowledge bases with multiple filtering options.
-     * 
+     *
      * This method supports hybrid search combining vector and keyword search,
      * filtering by entry types, tags, and other metadata.
      */
@@ -415,7 +415,7 @@ class KnowledgeBaseController extends Controller
             'knowledge_base_ids' => $request->input('knowledge_base_ids'),
             'search_mode' => $request->input('search_mode', 'hybrid'),
             'min_similarity' => $request->input('min_similarity', 0.7),
-            'limit' => $request->input('limit', 20),
+            'limit' => (int)$request->input('limit', 20),
             'filters' => $request->input('filters', []),
             'include_metadata' => $request->input('include_metadata', false),
             'vector_weight' => $request->input('vector_weight'),

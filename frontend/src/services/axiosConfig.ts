@@ -11,7 +11,7 @@ import logger from "@/utils/logger";
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: env.API_BASE_URL || "/api",
+  baseURL: env.API_BASE_URL,
   timeout: 30000, // 30 seconds
   headers: {
     "Content-Type": "application/json",

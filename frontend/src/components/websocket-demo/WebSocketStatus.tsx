@@ -26,11 +26,11 @@ const WebSocketStatus = () => {
     websocketService.getStats
       ? websocketService.getStats()
       : {
-          queuedMessages: 0,
-          reconnectAttempts: 0,
-          maxReconnectAttempts: 5,
-          messageRatePerMinute: 0,
-        },
+        queuedMessages: 0,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 5,
+        messageRatePerMinute: 0,
+      },
   );
   const [lastPingLatency, setLastPingLatency] = useState<number | null>(null);
 
@@ -41,24 +41,16 @@ const WebSocketStatus = () => {
       setConnecting(false);
       setError(null);
       setMessages((prev) => [...prev, "Connected to WebSocket server"]);
-      if (websocketService.getConnectionState) {
-        setConnectionState(websocketService.getConnectionState());
-      }
-      if (websocketService.getStats) {
-        setStats(websocketService.getStats());
-      }
+      setConnectionState(websocketService.getConnectionState());
+      setStats(websocketService.getStats());
     };
 
     const handleClose = () => {
       setConnected(false);
       setConnecting(false);
       setMessages((prev) => [...prev, "Disconnected from WebSocket server"]);
-      if (websocketService.getConnectionState) {
-        setConnectionState(websocketService.getConnectionState());
-      }
-      if (websocketService.getStats) {
-        setStats(websocketService.getStats());
-      }
+      setConnectionState(websocketService.getConnectionState());
+      setStats(websocketService.getStats());
     };
 
     const handleError = (err: any) => {
@@ -70,52 +62,48 @@ const WebSocketStatus = () => {
 
     const handleMessage = (message: any) => {
       try {
-        const data =
-          typeof message === "string" ? JSON.parse(message) : message;
-        if (data.type === "pong" && data.sentAt) {
-          const latency = Date.now() - data.sentAt;
+        if (message.type === "pong" && message.sentAt) {
+          const latency = Date.now() - message.sentAt;
           setLastPingLatency(latency);
         }
 
-        if (data.channel === channel || !data.channel) {
-          setMessages((prev) => [...prev, `Received: ${JSON.stringify(data)}`]);
+        if (message.channel === channel || !message.channel) {
+          setMessages((prev) => [...prev, `Received: ${JSON.stringify(message)}`]);
         }
       } catch (err) {
-        setMessages((prev) => [...prev, `Received: ${message}`]);
+        setMessages((prev) => [...prev, `Received: ${JSON.stringify(message)}`]);
       }
     };
 
-    // Register event listeners
-    if (websocketService.onOpen) websocketService.onOpen(handleOpen);
-    if (websocketService.onClose) websocketService.onClose(handleClose);
-    if (websocketService.onError) websocketService.onError(handleError);
-    if (websocketService.onMessage) websocketService.onMessage(handleMessage);
+    // Register event listeners with the main WebSocket service
+    const removeConnectListener = websocketService.onConnect(handleOpen);
+    const removeDisconnectListener = websocketService.onDisconnect(handleClose);
+    const removeErrorListener = websocketService.onError(handleError);
+    const removeMessageListener = websocketService.onMessage(handleMessage);
 
-    // Update stats periodically if methods exist
+    // Update stats periodically
     const interval = setInterval(() => {
-      if (websocketService.getConnectionState) {
-        setConnectionState(websocketService.getConnectionState());
-      }
-      if (websocketService.getStats) {
-        setStats(websocketService.getStats());
-      }
+      setConnectionState(websocketService.getConnectionState());
+      setStats(websocketService.getStats());
+      setConnected(websocketService.isConnected());
     }, 1000);
 
     // Cleanup on unmount
     return () => {
-      if (websocketService.offOpen) websocketService.offOpen(handleOpen);
-      if (websocketService.offClose) websocketService.offClose(handleClose);
-      if (websocketService.offError) websocketService.offError(handleError);
-      if (websocketService.offMessage)
-        websocketService.offMessage(handleMessage);
+      // Remove all event listeners
+      removeConnectListener();
+      removeDisconnectListener();
+      removeErrorListener();
+      removeMessageListener();
+
       clearInterval(interval);
 
       // Disconnect if connected
-      if (connected && websocketService.disconnect) {
+      if (connected) {
         websocketService.disconnect();
       }
     };
-  }, [connected, channel]);
+  }, [channel]);
 
   // Get appropriate color for connection state
   const getStateColor = (state: ConnectionState) => {
@@ -151,23 +139,16 @@ const WebSocketStatus = () => {
     if (!inputMessage.trim()) return;
 
     try {
-      if (websocketService.send || websocketService.sendMessage) {
-        const messageObj = {
-          channel,
-          message: inputMessage,
-          type: "message",
-          timestamp: new Date().toISOString(),
-        };
+      const messageObj = {
+        channel,
+        message: inputMessage,
+        type: "message",
+        timestamp: new Date().toISOString(),
+      };
 
-        if (websocketService.send) {
-          websocketService.send(messageObj);
-        } else if (websocketService.sendMessage) {
-          websocketService.sendMessage(messageObj);
-        }
-
-        setMessages((prev) => [...prev, `Sent to ${channel}: ${inputMessage}`]);
-        setInputMessage("");
-      }
+      websocketService.sendMessage(messageObj);
+      setMessages((prev) => [...prev, `Sent to ${channel}: ${inputMessage}`]);
+      setInputMessage("");
     } catch (err) {
       setError("Failed to send message");
       console.error("Error sending message:", err);
@@ -175,19 +156,15 @@ const WebSocketStatus = () => {
   };
 
   const sendPing = () => {
-    if (websocketService.sendMessage) {
-      websocketService.sendMessage({
-        type: "ping",
-        sentAt: Date.now(),
-        timestamp: new Date().toISOString(),
-      });
-    }
+    websocketService.sendMessage({
+      type: "ping",
+      sentAt: Date.now(),
+      timestamp: new Date().toISOString(),
+    });
   };
 
   const isConnected = () => {
-    return websocketService.isConnected
-      ? websocketService.isConnected()
-      : connected;
+    return websocketService.isConnected();
   };
 
   return (

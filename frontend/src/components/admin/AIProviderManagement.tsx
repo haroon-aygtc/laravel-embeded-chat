@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -26,10 +27,14 @@ import {
     setAIProviderDefaultModel
 } from '@/services/api/features/aiProvidersfeatures'
 
-export default function AIProviderManagement() {
+interface AIProviderManagementProps {
+    initialProvider?: string;
+}
+
+export default function AIProviderManagement({ initialProvider = 'openai' }: AIProviderManagementProps) {
     const [providers, setProviders] = useState<AIProvider[]>([])
     const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState<string>('openai')
+    const [activeTab, setActiveTab] = useState<string>(initialProvider)
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
     const [customUrls, setCustomUrls] = useState<Record<string, string>>({})
     const [defaultModels, setDefaultModels] = useState<Record<string, string>>({})
@@ -37,11 +42,25 @@ export default function AIProviderManagement() {
     const [connectionStatus, setConnectionStatus] = useState<Record<string, { success: boolean; message: string }>>({})
     const [providerModels, setProviderModels] = useState<Record<string, AIProviderModel[]>>({})
 
+    const [searchParams, setSearchParams] = useSearchParams()
+    const navigate = useNavigate()
     const { toast } = useToast()
 
     useEffect(() => {
+        console.log("AIProviderManagement - Initial render")
+        console.log("Search params:", Object.fromEntries(searchParams.entries()))
+        console.log("Current provider param:", searchParams.get('provider'))
+        console.log("Initial provider prop:", initialProvider)
+
+        // Update URL if needed to match the initialProvider
+        const currentProviderParam = searchParams.get('provider')
+        if (initialProvider && (!currentProviderParam || currentProviderParam !== initialProvider)) {
+            console.log(`Updating URL with initialProvider: ${initialProvider}`)
+            setSearchParams({ provider: initialProvider })
+        }
+
         loadProviders()
-    }, [])
+    }, [initialProvider, searchParams, setSearchParams])
 
     const loadProviders = async () => {
         setLoading(true)
@@ -80,9 +99,35 @@ export default function AIProviderManagement() {
             setConnectionStatus(initialConnectionStatus)
             setIsTestingConnection(initialIsTestingConnection)
 
-            // Set first provider as active tab if available
-            if (data.length > 0) {
-                setActiveTab(data[0].id)
+            // Determine which provider to show
+            console.log("Available providers:", data.map(p => p.id))
+            console.log("Initial provider:", initialProvider)
+
+            // First try to use initialProvider
+            if (initialProvider && data.some(p => p.id === initialProvider)) {
+                console.log(`Using initialProvider: ${initialProvider}`)
+                setActiveTab(initialProvider)
+
+                // Make sure URL matches
+                const currentParam = searchParams.get('provider')
+                if (currentParam !== initialProvider) {
+                    console.log(`Updating URL to match initialProvider: ${initialProvider}`)
+                    setSearchParams({ provider: initialProvider })
+                }
+            }
+            // Then try URL parameter
+            else {
+                const providerParam = searchParams.get('provider')
+                if (providerParam && data.some(p => p.id === providerParam)) {
+                    console.log(`Using provider from URL: ${providerParam}`)
+                    setActiveTab(providerParam)
+                }
+                // Finally default to first provider
+                else if (data.length > 0) {
+                    console.log(`No valid provider specified, defaulting to first: ${data[0].id}`)
+                    setActiveTab(data[0].id)
+                    setSearchParams({ provider: data[0].id })
+                }
             }
         } catch (error) {
             toast({
@@ -110,7 +155,16 @@ export default function AIProviderManagement() {
     }
 
     const handleTabChange = (value: string) => {
+        console.log(`Tab changed to: ${value}`)
         setActiveTab(value)
+
+        // Update URL with the new provider without creating a new history entry
+        const newParams = new URLSearchParams(searchParams)
+        newParams.set('provider', value)
+        setSearchParams(newParams, { replace: true })
+
+        // Alternative approach using navigate
+        // navigate(`/admin/ai-providers?provider=${value}`, { replace: true })
     }
 
     const handleApiKeyChange = (providerId: string, value: string) => {
@@ -586,4 +640,4 @@ export default function AIProviderManagement() {
             </Tabs>
         </div>
     )
-} 
+}

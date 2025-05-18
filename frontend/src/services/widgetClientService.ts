@@ -1,309 +1,374 @@
 import axios from 'axios';
-import { API_BASE_URL } from "@/config/constants";
-import logger from '@/utils/logger';
+import { API_BASE_URL } from '@/services/api/core/apiClient';
+import { widgetEndpoints } from './api/endpoints/widgetEndpoints';
+import {
+    Widget,
+    ChatMessage,
+    ChatSession
+} from '@/types/widget';
 
-export interface ApiResponse<T = any> {
-  status: 'success' | 'error';
-  data: T;
-  message?: string;
-}
+/**
+ * WidgetClientService
+ * 
+ * This service handles all API interactions for the embedded widget
+ * when used on third-party websites. It uses a dedicated client without
+ * authentication headers.
+ */
 
-export interface VisualSettings {
-  primaryColor: string;
-  secondaryColor: string;
-  backgroundColor: string;
-  textColor: string;
-  fontFamily: string;
-  borderRadius: number;
-  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  width: string;
-  height: string;
-  style: 'rounded' | 'square' | 'standard';
-  colors: {
-    primary: string;
-    background: string;
-    text: string;
-    assistantBubble: string;
-    userBubble: string;
-  };
-}
+// Create a separate axios instance for public widget usage
+// This ensures we don't send auth tokens from the main app
+const widgetClient = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Widget-Client': 'true',
+    },
+    withCredentials: true, // Send cookies for session management
+});
 
-export interface BehavioralSettings {
-  initialState: 'open' | 'closed' | 'minimized';
-  allowAttachments: boolean;
-  allowVoice: boolean;
-  allowEmoji: boolean;
-  showAfterSeconds: number;
-  allowedDomains: string[] | null;
-}
-
-export interface ContentSettings {
-  welcomeMessage: string;
-  placeholderText: string;
-  showBranding: boolean;
+export interface ApiResponse<T> {
+    status: string;
+    data: T;
+    message?: string;
 }
 
 export interface WidgetConfig {
-  id: string;
-  title: string;
-  subtitle: string | null;
-  visual_settings: VisualSettings;
-  behavioral_settings: BehavioralSettings;
-  content_settings: ContentSettings;
-  context_rule_id: string | null;
-  knowledge_base_ids: string[] | null;
-}
-
-export interface ChatSession {
-  session_id: string;
-  token?: string;
-  widget_id: string;
-  created_at: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  session_id: string;
-  content: string;
-  type: 'user' | 'ai' | 'system';
-  created_at: string;
-  metadata?: Record<string, any>;
-}
-
-export interface FollowUpQuestion {
-  id: string;
-  content: string;
+    id: string;
+    title: string;
+    subtitle?: string;
+    visual_settings: Widget['visual_settings'];
+    behavioral_settings: Widget['behavioral_settings'];
+    content_settings: Widget['content_settings'];
 }
 
 export const widgetClientService = {
-  /**
-   * Get the widget configuration
-   */
-  async getWidgetConfig(widgetId: string): Promise<WidgetConfig> {
-    try {
-      const response = await axios.get<ApiResponse<WidgetConfig>>(
-        `${API_BASE_URL}/public/widgets/${widgetId}/config`
-      );
-
-      if (response.data.status === 'success') {
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Failed to get widget configuration');
-    } catch (error) {
-      logger.error('Error getting widget configuration:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Create a new chat session for a widget
-   * 
-   * @param widgetId Widget identifier
-   * @param metadata Optional session metadata
-   * @returns Chat session details
-   */
-  async createChatSession(widgetId: string, metadata?: Record<string, any>): Promise<ChatSession> {
-    try {
-      const response = await axios.post<ApiResponse<ChatSession>>(
-        `${API_BASE_URL}/public/widgets/${widgetId}/sessions`,
-        {
-          metadata: metadata || {
-            referrer: window.location.href,
-            userAgent: navigator.userAgent
-          }
+    /**
+     * Get widget configuration for public widget
+     * @param widgetId The ID of the widget to get the configuration for
+     * @returns Promise with widget configuration
+     */
+    async getWidgetConfig(widgetId: string): Promise<ApiResponse<WidgetConfig>> {
+        try {
+            const response = await widgetClient.get(widgetEndpoints.getWidgetConfig(widgetId));
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Widget configuration retrieved successfully'
+            };
+        } catch (error: any) {
+            console.error('Error getting widget config:', error);
+            return {
+                status: 'error',
+                data: {} as WidgetConfig,
+                message: error.response?.data?.message || 'Failed to retrieve widget configuration'
+            };
         }
-      );
+    },
 
-      if (response.data.status === 'success') {
-        // Store the session ID in localStorage for persistence
-        localStorage.setItem(`widget_session_${widgetId}`, response.data.data.session_id);
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Failed to create chat session');
-    } catch (error) {
-      logger.error('Error creating chat session:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get messages for a chat session
-   * 
-   * @param sessionId Session identifier
-   * @returns Chat messages
-   */
-  async getMessages(sessionId: string): Promise<ChatMessage[]> {
-    try {
-      const response = await axios.get<ApiResponse<{ data: ChatMessage[] }>>(
-        `${API_BASE_URL}/public/chat/sessions/${sessionId}/messages`
-      );
-
-      if (response.data.status === 'success') {
-        return response.data.data.data;
-      }
-
-      throw new Error(response.data.message || 'Failed to get chat messages');
-    } catch (error) {
-      logger.error('Error getting chat messages:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Send a message in a chat session
-   * 
-   * @param sessionId Session identifier
-   * @param content Message content
-   * @returns Chat message details including AI response
-   */
-  async sendMessage(sessionId: string, content: string): Promise<{
-    userMessage: ChatMessage;
-    aiMessage: ChatMessage;
-  }> {
-    try {
-      const response = await axios.post<ApiResponse<{
-        userMessage: ChatMessage;
-        aiMessage: ChatMessage;
-      }>>(
-        `${API_BASE_URL}/public/chat/sessions/${sessionId}/messages`,
-        { content, type: 'text' }
-      );
-
-      if (response.data.status === 'success') {
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Failed to send message');
-    } catch (error) {
-      logger.error('Error sending message:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Validate if the current domain is allowed for the widget
-   * 
-   * @param widgetId Widget identifier
-   * @returns Validation result
-   */
-  async validateDomain(widgetId: string): Promise<boolean> {
-    try {
-      const response = await axios.post<ApiResponse<{ is_valid: boolean }>>(
-        `${API_BASE_URL}/public/widgets/${widgetId}/validate-domain`,
-        { domain: window.location.hostname }
-      );
-
-      return response.data.status === 'success' && response.data.data.is_valid;
-    } catch (error) {
-      logger.error('Error validating domain:', error);
-      return false;
-    }
-  },
-
-  /**
-   * Get active chat session for a widget, or create new one if none exists
-   * 
-   * @param widgetId Widget identifier
-   * @returns Chat session details
-   */
-  async getOrCreateSession(widgetId: string): Promise<ChatSession> {
-    // Check if we have a saved session ID
-    const sessionId = localStorage.getItem(`widget_session_${widgetId}`);
-
-    if (sessionId) {
-      try {
-        // Verify the session exists by trying to get messages
-        await this.getMessages(sessionId);
-
-        // Return a simplified session object since we don't have the full details
-        return {
-          session_id: sessionId,
-          widget_id: widgetId,
-          created_at: new Date().toISOString()
-        };
-      } catch (error) {
-        // Session likely expired or is invalid, create a new one
-        logger.warn('Saved session invalid, creating new session');
-      }
-    }
-
-    // Create a new session
-    return this.createChatSession(widgetId);
-  },
-
-  /**
-   * Check if current domain is allowed for the widget
-   */
-  isCurrentDomainAllowed(allowedDomains: string[] | null): boolean {
-    if (!allowedDomains || allowedDomains.length === 0) {
-      return true; // No domain restrictions
-    }
-
-    const currentDomain = window.location.hostname;
-
-    return allowedDomains.some(domain => {
-      // Check for exact match
-      if (domain === currentDomain) {
-        return true;
-      }
-
-      // Check for wildcard subdomains
-      if (domain.startsWith('*.')) {
-        const baseDomain = domain.substring(2);
-        return currentDomain.endsWith(baseDomain);
-      }
-
-      return false;
-    });
-  },
-
-  /**
-   * Get follow-up questions for a chat session
-   * 
-   * @param sessionId Session identifier
-   * @returns Follow-up questions
-   */
-  async getFollowUpQuestions(sessionId: string): Promise<FollowUpQuestion[]> {
-    try {
-      const response = await axios.get<ApiResponse<FollowUpQuestion[]>>(
-        `${API_BASE_URL}/public/chat/sessions/${sessionId}/follow-up-questions`
-      );
-
-      if (response.data.status === 'success') {
-        return response.data.data;
-      }
-
-      return [];
-    } catch (error) {
-      logger.error('Error getting follow-up questions:', error);
-      return [];
-    }
-  },
-
-  /**
-   * Update typing status for a chat session
-   * 
-   * @param sessionId Session identifier
-   * @param isTyping Whether the user is typing
-   * @param clientId Unique client identifier
-   * @returns Success status
-   */
-  async updateTypingStatus(sessionId: string, isTyping: boolean, clientId: string): Promise<boolean> {
-    try {
-      const response = await axios.post<ApiResponse<{ status: string }>>(
-        `${API_BASE_URL}/public/chat/sessions/${sessionId}/typing`,
-        {
-          is_typing: isTyping,
-          client_id: clientId
+    /**
+     * Create a new chat session for the widget
+     * @param widgetId The ID of the widget to create a session for
+     * @returns Promise with session ID
+     */
+    async createChatSession(widgetId: string): Promise<ApiResponse<{ session_id: string; name: string }>> {
+        try {
+            const response = await widgetClient.post(widgetEndpoints.createChatSession(widgetId));
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Chat session created successfully'
+            };
+        } catch (error: any) {
+            console.error('Error creating chat session:', error);
+            return {
+                status: 'error',
+                data: { session_id: '', name: '' },
+                message: error.response?.data?.message || 'Failed to create chat session'
+            };
         }
-      );
+    },
 
-      return response.data.status === 'success';
-    } catch (error) {
-      logger.error('Error updating typing status:', error);
-      return false;
+    /**
+     * Get messages for a chat session
+     * @param sessionId The ID of the session to get messages for
+     * @param page Page number for pagination
+     * @param limit Number of messages per page
+     * @returns Promise with chat messages
+     */
+    async getSessionMessages(
+        sessionId: string,
+        page = 1,
+        limit = 50
+    ): Promise<ApiResponse<{ data: ChatMessage[]; pagination: any }>> {
+        try {
+            const response = await widgetClient.get(widgetEndpoints.getSessionMessages(sessionId, page, limit));
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Messages retrieved successfully'
+            };
+        } catch (error: any) {
+            console.error('Error getting session messages:', error);
+            return {
+                status: 'error',
+                data: { data: [], pagination: {} },
+                message: error.response?.data?.message || 'Failed to retrieve messages'
+            };
+        }
+    },
+
+    /**
+     * Send a message in a chat session
+     * @param sessionId The ID of the session to send the message in
+     * @param content The message content
+     * @param attachments Optional file attachments
+     * @returns Promise with sent message
+     */
+    async sendMessage(
+        sessionId: string,
+        content: string,
+        attachments?: File[]
+    ): Promise<ApiResponse<ChatMessage>> {
+        try {
+            let response;
+
+            if (attachments && attachments.length > 0) {
+                // Handle file uploads
+                const formData = new FormData();
+                formData.append('content', content);
+                attachments.forEach((attachment, index) => {
+                    formData.append(`attachments[${index}]`, attachment);
+                });
+
+                response = await widgetClient.post(
+                    widgetEndpoints.sendMessage(sessionId),
+                    formData,
+                    {
+                        headers: {
+                            'Content-Type': 'multipart/form-data'
+                        }
+                    }
+                );
+            } else {
+                // Simple text message
+                response = await widgetClient.post(widgetEndpoints.sendMessage(sessionId), {
+                    content
+                });
+            }
+
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Message sent successfully'
+            };
+        } catch (error: any) {
+            console.error('Error sending message:', error);
+            return {
+                status: 'error',
+                data: {} as ChatMessage,
+                message: error.response?.data?.message || 'Failed to send message'
+            };
+        }
+    },
+
+    /**
+     * Validate if the widget can be embedded on the current domain
+     * @param widgetId The ID of the widget to validate
+     * @param domain The domain to validate against
+     * @returns Promise with validation result
+     */
+    async validateDomain(widgetId: string, domain: string): Promise<ApiResponse<{ isAllowed: boolean; domain: string }>> {
+        try {
+            const response = await widgetClient.post(widgetEndpoints.validateDomain(widgetId, domain), {
+                domain
+            });
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Domain validated successfully'
+            };
+        } catch (error: any) {
+            console.error('Error validating domain:', error);
+            return {
+                status: 'error',
+                data: { isAllowed: false, domain },
+                message: error.response?.data?.message || 'Failed to validate domain'
+            };
+        }
+    },
+
+    /**
+     * End a chat session
+     * @param sessionId The ID of the session to end
+     * @returns Promise with session end result
+     */
+    async endSession(sessionId: string): Promise<ApiResponse<{ success: boolean }>> {
+        try {
+            const response = await widgetClient.post(widgetEndpoints.endSession(sessionId));
+            return {
+                status: 'success',
+                data: { success: true },
+                message: response.data.message || 'Session ended successfully'
+            };
+        } catch (error: any) {
+            console.error('Error ending session:', error);
+            return {
+                status: 'error',
+                data: { success: false },
+                message: error.response?.data?.message || 'Failed to end session'
+            };
+        }
+    },
+
+    /**
+     * Provide feedback for a message
+     * @param messageId The ID of the message to provide feedback for
+     * @param feedback The feedback object containing rating and comment
+     * @returns Promise with feedback submission result
+     */
+    async provideFeedback(
+        messageId: string,
+        feedback: { rating: number; comment?: string }
+    ): Promise<ApiResponse<ChatMessage>> {
+        try {
+            const response = await widgetClient.post(`/widget-client/messages/${messageId}/feedback`, feedback);
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Feedback submitted successfully'
+            };
+        } catch (error: any) {
+            console.error('Error submitting feedback:', error);
+            return {
+                status: 'error',
+                data: {} as ChatMessage,
+                message: error.response?.data?.message || 'Failed to submit feedback'
+            };
+        }
+    },
+
+
+    /**
+     * Get the embed code for a widget
+     * @param widgetId The ID of the widget to get the embed code for
+     * @param type The type of embed code to get
+     * @returns Promise with embed code
+     */
+    async getEmbedCode(widgetId: string, type): Promise<ApiResponse<{ embed_code: string }>> {
+        try {
+            const response = await widgetClient.get(widgetEndpoints.getEmbedCode(widgetId, type));
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Embed code retrieved successfully'
+            };
+        } catch (error: any) {
+            console.error('Error getting embed code:', error);
+            return {
+                status: 'error',
+                data: { embed_code: '' },
+                message: error.response?.data?.message || 'Failed to retrieve embed code'
+            };
+        }
+    },
+
+
+    /**
+     * Get the widget list
+     * @returns Promise with widget list
+     */
+    async getWidgetList(): Promise<ApiResponse<Widget[]>> {
+        try {
+            const response = await widgetClient.get(widgetEndpoints.getAllWidgets);
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Widget list retrieved successfully'
+            };
+        } catch (error: any) {
+            console.error('Error getting widget list:', error);
+            return {
+                status: 'error',
+                data: [],
+                message: error.response?.data?.message || 'Failed to retrieve widget list'
+            };
+        }
+    },
+
+    async createWidget(widget: Widget): Promise<ApiResponse<Widget>> {
+        try {
+            const response = await widgetClient.post(widgetEndpoints.createWidget, widget);
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Widget created successfully'
+            };
+        } catch (error: any) {
+            console.error('Error creating widget:', error);
+            return {
+                status: 'error',
+                data: {} as Widget,
+                message: error.response?.data?.message || 'Failed to create widget'
+            };
+        }
+    },
+
+    async updateWidget(widgetId: string, widget: Widget): Promise<ApiResponse<Widget>> {
+        try {
+            const response = await widgetClient.put(widgetEndpoints.updateWidget(widgetId), widget);
+            return {
+                status: 'success',
+                data: response.data.data,
+                message: response.data.message || 'Widget updated successfully'
+            };
+        } catch (error: any) {
+            console.error('Error updating widget:', error);
+            return {
+                status: 'error',
+                data: {} as Widget,
+                message: error.response?.data?.message || 'Failed to update widget'
+            };
+        }
+    },
+
+    async deleteWidget(widgetId: string): Promise<ApiResponse<{ success: boolean }>> {
+        try {
+            const response = await widgetClient.delete(widgetEndpoints.deleteWidget(widgetId));
+            return {
+                status: 'success',
+                data: { success: true },
+                message: response.data.message || 'Widget deleted successfully'
+            };
+        } catch (error: any) {
+            console.error('Error deleting widget:', error);
+            return {
+                status: 'error',
+                data: { success: false },
+                message: error.response?.data?.message || 'Failed to delete widget'
+            };
+        }
+    },
+
+    async toggleWidgetStatus(widgetId: string): Promise<ApiResponse<{ success: boolean }>> {
+        try {
+            const response = await widgetClient.post(widgetEndpoints.toggleWidgetStatus(widgetId));
+            return {
+                status: 'success',
+                data: { success: true },
+                message: response.data.message || 'Widget status toggled successfully'
+            };
+        } catch (error: any) {
+            console.error('Error toggling widget status:', error);
+            return {
+                status: 'error',
+                data: { success: false },
+                message: error.response?.data?.message || 'Failed to toggle widget status'
+            };
+        }
     }
-  }
-}; 
+};
+
+
+
+export default widgetClientService; 
